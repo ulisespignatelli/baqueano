@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Formato y vet
+        run: make lint
+      - name: Tests
+        run: make test-go
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: El contrato y los tipos generados coinciden
+        run: |
+          cd web && npm ci && npm run gen:api
+          git diff --exit-code src/shared/api/schema.gen.ts
+      - name: Tipos y tests
+        run: make test-web
+
+  build:
+    needs: [backend, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make build
+      - name: La demo se genera con el binario
+        run: ./bin/baqueano demo --data /tmp/demo --out /tmp/demo-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baqueano-linux-amd64
+          path: bin/baqueano

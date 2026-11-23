@@ -1,0 +1,443 @@
+openapi: 3.1.0
+info:
+  title: Baqueano API
+  version: 1.0.0
+  summary: Superficie externa de ataque de organizaciones que autorizaron el análisis.
+  description: |
+    Contrato entre el backend (Go) y el panel (React). El alcance de cada organización se analiza si quien
+    la cargó aceptó la declaración de responsabilidad, o si el dueño verificó el dominio en DNS (opcional). Los tipos de TypeScript del panel se generan
+    desde este archivo (`npm run gen:api` en web/).
+
+    Las operaciones que modifican datos exigen `X-Requested-With: baqueano` y, si el servidor se inició
+    con token, `Authorization: Bearer <token>`.
+  license:
+    name: MIT
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Estado del servidor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /overview:
+    get:
+      operationId: getOverview
+      responses:
+        "200":
+          description: Organizaciones con su último escaneo y su evolución.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Overview" }
+  /orgs:
+    get:
+      operationId: listOrgs
+      responses:
+        "200":
+          description: Organizaciones.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/OrgSummary" } }
+    post:
+      operationId: createOrg
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrgRequest" }
+      responses:
+        "201":
+          description: Organización creada. Cada dominio trae el registro TXT a publicar.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+  /orgs/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getOrg
+      responses:
+        "200":
+          description: Organización con su historial de escaneos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteOrg
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "204": { description: Borrada junto con sus escaneos. }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/domains:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: addDomain
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties: { domain: { type: string } }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/networks:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: addNetwork
+      description: Suma una red propia (CIDR o IP pública, hasta un /20). Se analiza si hay declaración de responsabilidad.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [network]
+              properties: { network: { type: string } }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/attestation:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: attest
+      description: Registra la declaración de responsabilidad sobre el alcance (queda en el historial de auditoría).
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttestationRequest" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/verify:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: verifyOrg
+      description: Verificación opcional. Consulta los registros TXT de cada dominio; si un registro se retiró, el dominio deja de estar verificado.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Organización con el estado de verificación actualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/scans:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: startScan
+      description: Lanza un escaneo en segundo plano (puede tardar minutos). Consultar el avance en /jobs/{id}.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "202":
+          description: Escaneo iniciado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /jobs/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getJob
+      responses:
+        "200":
+          description: Estado del escaneo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Error" }
+  /snapshots/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getSnapshot
+      responses:
+        "200":
+          description: Escaneo completo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Snapshot" }
+        "404": { $ref: "#/components/responses/Error" }
+  /snapshots/{id}/changes:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getChanges
+      responses:
+        "200":
+          description: Diferencias con el escaneo anterior de la misma organización.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Changes" }
+        "404": { $ref: "#/components/responses/Error" }
+  /snapshots/{id}/export:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: format, in: query, required: true, schema: { type: string, enum: [json, csv] } }
+    get:
+      operationId: exportSnapshot
+      responses:
+        "200":
+          description: Escaneo en JSON, o hallazgos en CSV (con celdas protegidas contra inyección de fórmulas).
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Snapshot" } }
+            text/csv: { schema: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+    csrf: { type: apiKey, in: header, name: X-Requested-With, description: "Siempre `baqueano`." }
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-zA-Z0-9_-]{1,64}$" }
+  responses:
+    Error:
+      description: Error.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties: { error: { type: string } }
+  schemas:
+    Severity: { type: string, enum: [critica, alta, media, baja, info] }
+    Category: { type: string, enum: [servicio-expuesto, vulnerabilidad, tls, dns, higiene] }
+    CountMap: { type: object, additionalProperties: { type: integer } }
+
+    Health:
+      type: object
+      required: [status, version, exposure_source, auth_required, read_only]
+      properties:
+        status: { type: string }
+        version: { type: string }
+        exposure_source: { type: string, enum: [shodan, internetdb, none, demo] }
+        auth_required: { type: boolean }
+        read_only: { type: boolean }
+
+    Domain:
+      type: object
+      required: [name, token]
+      properties:
+        name: { type: string }
+        token: { type: string }
+        verified_at: { type: string, format: date-time }
+        networks: { type: array, items: { type: string } }
+        last_check: { type: string, format: date-time }
+        check_error: { type: string }
+    Attestation:
+      type: object
+      required: [by, at, statement]
+      properties:
+        by: { type: string }
+        at: { type: string, format: date-time }
+        statement: { type: string }
+    AuditEvent:
+      type: object
+      required: [at, action]
+      properties:
+        at: { type: string, format: date-time }
+        action: { type: string }
+        detail: { type: string }
+    Organization:
+      type: object
+      required: [id, name, domains, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        domains: { type: array, items: { $ref: "#/components/schemas/Domain" } }
+        networks: { type: array, items: { type: string }, description: Redes declaradas. }
+        attestation: { $ref: "#/components/schemas/Attestation" }
+        audit: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
+        created_at: { type: string, format: date-time }
+    AttestationRequest:
+      type: object
+      required: [by, accepted]
+      properties:
+        by: { type: string, minLength: 3, maxLength: 120, description: Nombre de quien se hace responsable. }
+        accepted: { type: boolean, description: Tiene que ser true. }
+    CreateOrgRequest:
+      type: object
+      required: [name, domains]
+      properties:
+        name: { type: string, maxLength: 120 }
+        domains: { type: array, minItems: 1, maxItems: 20, items: { type: string } }
+        networks: { type: array, maxItems: 16, items: { type: string } }
+        attestation: { $ref: "#/components/schemas/AttestationRequest" }
+
+    SnapshotMeta:
+      type: object
+      required: [id, org_id, org_name, started_at, finished_at, score, assets, ips, services, findings, by_severity]
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        org_name: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        assets: { type: integer }
+        ips: { type: integer }
+        services: { type: integer }
+        findings: { type: integer }
+        by_severity: { $ref: "#/components/schemas/CountMap" }
+    OrgSummary:
+      allOf:
+        - { $ref: "#/components/schemas/Organization" }
+        - type: object
+          required: [trend]
+          properties:
+            latest: { $ref: "#/components/schemas/SnapshotMeta" }
+            trend: { type: array, items: { $ref: "#/components/schemas/SnapshotMeta" } }
+    OrgDetail:
+      allOf:
+        - { $ref: "#/components/schemas/OrgSummary" }
+        - type: object
+          required: [snapshots]
+          properties:
+            snapshots: { type: array, items: { $ref: "#/components/schemas/SnapshotMeta" } }
+    Overview:
+      type: object
+      required: [orgs, score, assets, services, findings, by_severity]
+      properties:
+        orgs: { type: array, items: { $ref: "#/components/schemas/OrgSummary" } }
+        score: { type: integer }
+        assets: { type: integer }
+        services: { type: integer }
+        findings: { type: integer }
+        by_severity: { $ref: "#/components/schemas/CountMap" }
+
+    Asset:
+      type: object
+      required: [sources, resolves]
+      properties:
+        hostname: { type: string }
+        ips: { type: array, items: { type: string } }
+        cname: { type: string }
+        sources: { type: array, items: { type: string } }
+        resolves: { type: boolean }
+        third_party: { type: string, description: Proveedor (CDN, SaaS); sus IP no se consultan. }
+    Vuln:
+      type: object
+      required: [cve, verified]
+      properties:
+        cve: { type: string }
+        cvss: { type: number }
+        epss: { type: number }
+        kev: { type: boolean }
+        verified: { type: boolean, description: "false = inferida por la versión, no confirmada." }
+        summary: { type: string }
+    Cert:
+      type: object
+      required: [not_after]
+      properties:
+        subject: { type: string }
+        issuer: { type: string }
+        not_after: { type: string, format: date-time }
+        self_signed: { type: boolean }
+        expired: { type: boolean }
+        tls_versions: { type: array, items: { type: string } }
+    Service:
+      type: object
+      required: [ip, port, transport, seen_at, source]
+      properties:
+        ip: { type: string }
+        port: { type: integer }
+        transport: { type: string }
+        product: { type: string }
+        version: { type: string }
+        module: { type: string }
+        http_title: { type: string }
+        tags: { type: array, items: { type: string } }
+        cpes: { type: array, items: { type: string } }
+        vulns: { type: array, items: { $ref: "#/components/schemas/Vuln" } }
+        cert: { $ref: "#/components/schemas/Cert" }
+        hostnames: { type: array, items: { type: string } }
+        org: { type: string }
+        country: { type: string }
+        seen_at: { type: string, format: date-time }
+        source: { type: string }
+    Finding:
+      type: object
+      required: [id, rule, category, severity, title, detail, recommendation, asset]
+      properties:
+        id: { type: string }
+        rule: { type: string }
+        category: { $ref: "#/components/schemas/Category" }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string }
+        detail: { type: string }
+        recommendation: { type: string }
+        asset: { type: string }
+        evidence: { type: array, items: { type: string } }
+        cve: { type: string }
+    Snapshot:
+      type: object
+      required: [id, org_id, org_name, started_at, finished_at, domains, networks, authorization, assets, services, findings, sources, score]
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        org_name: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        domains: { type: array, items: { type: string } }
+        networks: { type: [array, "null"], items: { type: string } }
+        authorization: { type: [array, "null"], items: { type: string }, description: Con qué autorización se analizó el alcance. }
+        assets: { type: [array, "null"], items: { $ref: "#/components/schemas/Asset" } }
+        services: { type: [array, "null"], items: { $ref: "#/components/schemas/Service" } }
+        findings: { type: [array, "null"], items: { $ref: "#/components/schemas/Finding" } }
+        sources: { type: array, items: { type: string } }
+        notes: { type: array, items: { type: string } }
+        score: { type: integer }
+    Changes:
+      type: object
+      required: [new_services, closed_services, new_findings, resolved_findings, new_assets, gone_assets]
+      properties:
+        previous_id: { type: string }
+        new_services: { type: array, items: { $ref: "#/components/schemas/Service" } }
+        closed_services: { type: array, items: { $ref: "#/components/schemas/Service" } }
+        new_findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+        resolved_findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+        new_assets: { type: array, items: { type: string } }
+        gone_assets: { type: array, items: { type: string } }
+
+    Job:
+      type: object
+      required: [id, org_id, status, message, started_at]
+      properties:
+        id: { type: string }
+        org_id: { type: string }
+        status: { type: string, enum: [running, done, error] }
+        message: { type: string }
+        snapshot_id: { type: string }
+        error: { type: string }
+        started_at: { type: string, format: date-time }

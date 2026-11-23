@@ -1,0 +1,174 @@
+import { useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
+import type { Finding } from "@/shared/api/types";
+import { Card, Empty, SeverityBadge, Tag } from "@/shared/ui";
+import { CATEGORIES, SEVERITIES, categoryLabel, severityLabel } from "@/shared/lib/labels";
+import { fmtNum } from "@/shared/lib/format";
+import { useOrgContext } from "@/features/orgs/context";
+import { filterFindings } from "./filter";
+
+export function FindingsPage() {
+  const { snapshot } = useOrgContext();
+  const [params, setParams] = useSearchParams();
+  const sev = params.get("sev")?.split(",").filter(Boolean) ?? [];
+  const cat = params.get("cat")?.split(",").filter(Boolean) ?? [];
+  const q = params.get("q") ?? "";
+  const selected = params.get("f");
+
+  const all = snapshot?.findings ?? [];
+  const { items, facets } = useMemo(() => filterFindings(all, { severity: sev, category: cat, q }), [all, sev.join(), cat.join(), q]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!snapshot) return <Card><Empty title="Sin escaneos todavía" /></Card>;
+  if (all.length === 0)
+    return (
+      <Card>
+        <Empty title="No hay hallazgos">
+          <p>Nada de lo que se ve desde internet coincide con los controles de Baqueano. Revisá igual la pestaña Servicios.</p>
+        </Empty>
+      </Card>
+    );
+
+  const set = (k: string, v: string | null) =>
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      if (v) n.set(k, v);
+      else n.delete(k);
+      return n;
+    }, { replace: true });
+  const toggle = (k: string, cur: string[], v: string) => set(k, (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]).join(",") || null);
+  const finding = all.find((f) => f.id === selected);
+
+  return (
+    <div className="inventory">
+      <aside className="filters" aria-label="Filtros">
+        <div className="facet">
+          <h3>Severidad</h3>
+          {SEVERITIES.filter((s) => s !== "info").map((s) => (
+            <button key={s} type="button" className="facet__opt" aria-pressed={sev.includes(s)} disabled={!sev.includes(s) && !facets.severity[s]} onClick={() => toggle("sev", sev, s)}>
+              <span className="check" aria-hidden="true" />
+              {severityLabel[s]}
+              <span className="n">{fmtNum(facets.severity[s] ?? 0)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="facet">
+          <h3>Tipo</h3>
+          {CATEGORIES.map((c) => (
+            <button key={c} type="button" className="facet__opt" aria-pressed={cat.includes(c)} disabled={!cat.includes(c) && !facets.category[c]} onClick={() => toggle("cat", cat, c)}>
+              <span className="check" aria-hidden="true" />
+              {categoryLabel[c]}
+              <span className="n">{fmtNum(facets.category[c] ?? 0)}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <Card className="card--flush">
+        <div className="toolbar">
+          <input className="input" type="search" placeholder="Buscar por IP, subdominio, CVE o texto…" defaultValue={q} onChange={(e) => set("q", e.target.value || null)} aria-label="Buscar" />
+          {(sev.length > 0 || cat.length > 0 || q) && (
+            <button type="button" className="btn btn--sm btn--ghost" onClick={() => setParams((p) => { const n = new URLSearchParams(p); ["sev", "cat", "q"].forEach((k) => n.delete(k)); return n; })}>
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+        {items.length === 0 ? (
+          <Empty title="Nada coincide con los filtros" />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Severidad</th>
+                  <th>Hallazgo</th>
+                  <th>Activo</th>
+                  <th>Tipo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((f) => (
+                  <tr key={f.id} className={`clickable ${f.id === selected ? "selected" : ""}`} onClick={() => set("f", f.id)}>
+                    <td>
+                      <SeverityBadge severity={f.severity} />
+                    </td>
+                    <td>
+                      <div className="cell-main">{f.title}</div>
+                      <div className="cell-sub" style={{ maxWidth: 620 }}>{f.detail}</div>
+                    </td>
+                    <td className="path">{f.asset}</td>
+                    <td>
+                      <span className="cat">{categoryLabel[f.category] ?? f.category}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="pager">
+          <span>
+            {fmtNum(items.length)} de {fmtNum(all.length)} hallazgos
+          </span>
+        </div>
+      </Card>
+      {finding && <FindingDrawer f={finding} onClose={() => set("f", null)} />}
+    </div>
+  );
+}
+
+function FindingDrawer({ f, onClose }: { f: Finding; onClose: () => void }) {
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    close.current?.focus();
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="f-title">
+        <div className="row">
+          <SeverityBadge severity={f.severity} />
+          <Tag>{categoryLabel[f.category] ?? f.category}</Tag>
+          <span className="spacer" />
+          <button ref={close} type="button" className="btn btn--sm btn--ghost" onClick={onClose} aria-label="Cerrar">
+            ✕
+          </button>
+        </div>
+        <h2 id="f-title" style={{ marginTop: 14 }}>
+          {f.title}
+        </h2>
+        <p className="path">{f.asset}</p>
+        <section>
+          <h3>Qué pasa</h3>
+          <p style={{ margin: 0, color: "var(--text-2)" }}>{f.detail}</p>
+        </section>
+        <section>
+          <h3>Qué hacer</h3>
+          <div className="callout">{f.recommendation}</div>
+        </section>
+        {f.evidence && f.evidence.length > 0 && (
+          <section>
+            <h3>Evidencia</h3>
+            <div className="code">{f.evidence.join("\n")}</div>
+          </section>
+        )}
+        <section>
+          <h3>Detalle</h3>
+          <dl className="kv">
+            <dt>Control</dt>
+            <dd className="mono">{f.rule}</dd>
+            {f.cve && (
+              <>
+                <dt>CVE</dt>
+                <dd className="mono">{f.cve}</dd>
+              </>
+            )}
+            <dt>Identificador</dt>
+            <dd className="mono">{f.id}</dd>
+          </dl>
+        </section>
+      </aside>
+    </>
+  );
+}

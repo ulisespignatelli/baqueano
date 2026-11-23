@@ -1,0 +1,8 @@
+/bin/
+.baqueano/
+.env
+node_modules/
+web/dist/
+backend/internal/adapters/httpapi/ui/dist/
+*.tsbuildinfo
+.DS_Store

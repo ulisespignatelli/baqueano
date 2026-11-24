@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./index";
-import type { CreateOrgRequest } from "./types";
+import type { Alert, AssetContext, CreateOrgRequest, Schedule, SeverityRule, StateChange } from "./types";
 
 export const keys = {
   health: ["health"] as const,
@@ -77,3 +77,25 @@ export function useStartScan(id: string) {
   return useMutation({ mutationFn: () => api.startScan(id) });
 }
 export { useInvalidateOrg };
+
+/** Mutaciones de la politica: al terminar refrescan la organizacion y los escaneos (cambia lo que se ve). */
+function useOrgMutation<T>(id: string, fn: (v: T) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.overview });
+      void qc.invalidateQueries({ queryKey: keys.org(id) });
+      void qc.invalidateQueries({ queryKey: ["snapshot"] });
+    },
+  });
+}
+export const useSaveContext = (id: string) => useOrgMutation(id, (c: AssetContext) => api.saveContext(id, c));
+export const useDeleteContext = (id: string) => useOrgMutation(id, (cid: string) => api.deleteContext(id, cid));
+export const useSaveRule = (id: string) => useOrgMutation(id, (r: SeverityRule) => api.saveRule(id, r));
+export const useDeleteRule = (id: string) => useOrgMutation(id, (rid: string) => api.deleteRule(id, rid));
+export const useSetState = (id: string) => useOrgMutation(id, (v: { fid: string; c: StateChange }) => api.setState(id, v.fid, v.c));
+export const useSaveAlert = (id: string) => useOrgMutation(id, (a: Alert) => api.saveAlert(id, a));
+export const useDeleteAlert = (id: string) => useOrgMutation(id, (aid: string) => api.deleteAlert(id, aid));
+export const useSetSchedule = (id: string) => useOrgMutation(id, (s: Schedule) => api.setSchedule(id, s));
+export const useTestAlert = (id: string) => useMutation({ mutationFn: (aid: string) => api.testAlert(id, aid) });

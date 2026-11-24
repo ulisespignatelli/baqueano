@@ -38,6 +38,15 @@ export const demoSource: DataSource = {
   startReassess: readOnly,
   intel: () => get("intel.json"),
   updateIntel: readOnly,
+  saveContext: readOnly,
+  deleteContext: readOnly,
+  saveRule: readOnly,
+  deleteRule: readOnly,
+  setState: readOnly,
+  saveAlert: readOnly,
+  deleteAlert: readOnly,
+  testAlert: readOnly,
+  setSchedule: readOnly,
   cve: (id) => {
     if (!/^CVE-\d{4}-\d{4,}$/.test(id)) return Promise.reject(new ApiError(404, "no encontrado"));
     return get(`intel/cves/${id}.json`);

@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "@/shared/api";
 import { useHealth } from "@/shared/api/queries";
-import { sourceLabel } from "@/shared/lib/labels";
+import { sourceName } from "@/shared/lib/labels";
 import { IconBug, IconEye, IconGithub, IconPlus, IconShield } from "./icons";
 
 const REPO = "https://github.com/ulisespignatelli/baqueano";
@@ -40,7 +40,7 @@ export function Layout() {
         <div className="side__foot">
           {health.data ? (
             <>
-              <b>{sourceLabel[health.data.exposure_source] ?? health.data.exposure_source}</b>
+              <b>{sourceName(health.data.exposure_source)}</b>
               <br />
               versión {health.data.version}
             </>

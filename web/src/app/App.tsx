@@ -9,6 +9,8 @@ import { AssetsPage } from "@/features/assets/AssetsPage";
 import { ServicesPage } from "@/features/services/ServicesPage";
 import { ChangesPage } from "@/features/changes/ChangesPage";
 import { SettingsPage } from "@/features/setup/SettingsPage";
+import { PolicyPage } from "@/features/workflow/PolicyPage";
+import { AutomationPage } from "@/features/workflow/AutomationPage";
 import { AboutPage } from "@/features/overview/AboutPage";
 import { IntelPage } from "@/features/intel/IntelPage";
 import { CVEPage } from "@/features/intel/CVEPage";
@@ -35,6 +37,8 @@ export function App() {
               <Route path="assets" element={<AssetsPage />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="changes" element={<ChangesPage />} />
+              <Route path="policy" element={<PolicyPage />} />
+              <Route path="automation" element={<AutomationPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="intel" element={<IntelPage />} />

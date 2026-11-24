@@ -123,6 +123,8 @@ export function OrgLayout() {
           Servicios<span className="count">{fmtNum(s?.services?.length ?? 0)}</span>
         </NavLink>
         <NavLink to={`changes${q}`}>Cambios</NavLink>
+        <NavLink to={`policy${q}`}>Contexto y reglas</NavLink>
+        <NavLink to={`automation${q}`}>Automatización</NavLink>
         <NavLink to={`settings${q}`}>Alcance</NavLink>
       </nav>
       {snap.isLoading ? <Loading /> : <Outlet context={ctx} />}

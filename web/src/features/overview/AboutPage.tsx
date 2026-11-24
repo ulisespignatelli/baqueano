@@ -50,7 +50,20 @@ export function AboutPage() {
             <b> cero descartes peligrosos</b> (una CVE que afecta y se descarta). El informe está en <code>docs/benchmark.md</code>.
           </p>
         </Card>
-        <Card title="7 · Hallazgos explicados">
+        <Card title="7 · Tu contexto, a la vista">
+          <p>
+            Cada organización dice qué es producción y qué es una prueba, quién es responsable de cada activo y qué controles pesan más para ella.
+            Los hallazgos se pueden marcar en curso, como falso positivo o con <b>riesgo aceptado</b> (con motivo, responsable y vencimiento). La
+            severidad original y cada ajuste quedan a la vista, y todo pasa por el historial de auditoría.
+          </p>
+        </Card>
+        <Card title="8 · Varias fuentes y alertas">
+          <p>
+            Shodan y Censys se combinan: cada puerto dice quién lo vio y el escaneo muestra cuánto coinciden. Los escaneos se pueden programar, y las
+            novedades llegan filtradas a un webhook firmado, Slack, Teams, correo o Jira, sin duplicar tickets.
+          </p>
+        </Card>
+        <Card title="9 · Hallazgos explicados">
           <p>
             Además de las CVE: servicios que no deberían estar en internet (RDP, bases de datos, protocolos industriales…), software sin soporte,
             certificados vencidos, subdominios tomables y paneles de administración públicos. Cada hallazgo dice qué es, por qué importa y cómo se

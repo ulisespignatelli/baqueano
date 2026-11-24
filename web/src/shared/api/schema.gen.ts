@@ -183,6 +183,182 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orgs/{id}/contexts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Crea o actualiza (por id) el contexto de un grupo de activos. */
+        post: operations["saveContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/contexts/{cid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                cid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Borra un contexto. */
+        delete: operations["deleteContext"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Crea o actualiza una regla de severidad. */
+        post: operations["saveRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/rules/{rid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                rid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Borra una regla. */
+        delete: operations["deleteRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/findings/{fid}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                fid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cambia el estado de un hallazgo. Aceptar exige motivo, responsable y vencimiento. */
+        post: operations["setFindingState"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Crea o actualiza una alerta. Un destino enmascarado conserva el guardado. */
+        post: operations["saveAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/alerts/{aid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                aid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Borra una alerta. */
+        delete: operations["deleteAlert"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Programa escaneos o reevaluaciones periódicas. */
+        post: operations["setSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{id}/alerts/{aid}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                aid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Envía un aviso de prueba por el canal de la alerta. */
+        post: operations["testAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/intel": {
         parameters: {
             query?: never;
@@ -324,8 +500,8 @@ export interface components {
         Health: {
             status: string;
             version: string;
-            /** @enum {string} */
-            exposure_source: "shodan" | "internetdb" | "none" | "demo";
+            /** @description shodan, internetdb, censys, none o demo; combinadas con + (shodan+censys). */
+            exposure_source: string;
             auth_required: boolean;
             read_only: boolean;
             /** @description Hay base de inteligencia de vulnerabilidades. */
@@ -363,6 +539,87 @@ export interface components {
             audit?: components["schemas"]["AuditEvent"][];
             /** Format: date-time */
             created_at: string;
+            contexts?: components["schemas"]["AssetContext"][];
+            rules?: components["schemas"]["SeverityRule"][];
+            /** @description Estado de cada hallazgo por su ID. */
+            states?: {
+                [key: string]: components["schemas"]["FindingState"];
+            };
+            schedule?: components["schemas"]["Schedule"];
+            /** @description Los destinos de webhook, Slack y Teams se devuelven enmascarados. */
+            alerts?: components["schemas"]["Alert"][];
+        };
+        AssetContext: {
+            id?: string;
+            /** @description Nombre, *.subdominio, IP o red. */
+            match: string;
+            /** @enum {string} */
+            environment?: "produccion" | "pruebas" | "desarrollo" | "";
+            /** @enum {string} */
+            criticality?: "alta" | "normal" | "baja" | "";
+            owner?: string;
+            note?: string;
+        };
+        SeverityRule: {
+            id?: string;
+            /** @description Control (PX-RDP), familia (PX-*) o todos (*). */
+            rule: string;
+            match?: string;
+            environment?: string;
+            severity: components["schemas"]["Severity"];
+            note: string;
+        };
+        FindingState: {
+            /** @enum {string} */
+            status: "abierto" | "en-curso" | "aceptado" | "falso-positivo";
+            note?: string;
+            by?: string;
+            /** Format: date-time */
+            at: string;
+            /** Format: date-time */
+            until?: string;
+        };
+        StateChange: {
+            /** @enum {string} */
+            status: "abierto" | "en-curso" | "aceptado" | "falso-positivo";
+            note?: string;
+            by?: string;
+            /** @description AAAA-MM-DD; obligatorio para aceptar (hasta un año). */
+            until?: string;
+        };
+        Schedule: {
+            enabled: boolean;
+            hours: number;
+            /** @enum {string} */
+            mode: "escanear" | "reevaluar";
+            /** Format: date-time */
+            next_run?: string;
+            /** Format: date-time */
+            last_run?: string;
+            last_error?: string;
+        };
+        Alert: {
+            id?: string;
+            name: string;
+            /** @enum {string} */
+            channel: "webhook" | "slack" | "teams" | "email" | "jira";
+            target: string;
+            events: ("hallazgo-nuevo" | "sube-severidad" | "servicio-nuevo" | "kev" | "resumen")[];
+            min_severity?: string;
+            rules?: string[];
+            enabled: boolean;
+            /** Format: date-time */
+            last_sent?: string;
+            last_error?: string;
+            tickets?: {
+                [key: string]: string;
+            };
+        };
+        Consensus: {
+            sources: string[];
+            services: number;
+            all: number;
+            single: number;
         };
         AttestationRequest: {
             /** @description Nombre de quien se hace responsable. */
@@ -488,6 +745,7 @@ export interface components {
             country?: string;
             /** Format: date-time */
             seen_at: string;
+            seen_by?: string[];
             source: string;
         };
         Finding: {
@@ -502,6 +760,13 @@ export interface components {
             evidence?: string[];
             cve?: string;
             vuln?: components["schemas"]["Vuln"];
+            /** @description Severidad antes del contexto y las reglas de la organización. */
+            base_severity?: string;
+            adjustments?: string[];
+            environment?: string;
+            criticality?: string;
+            owner?: string;
+            state?: components["schemas"]["FindingState"];
         };
         Snapshot: {
             id: string;
@@ -520,6 +785,7 @@ export interface components {
             findings: components["schemas"]["Finding"][] | null;
             sources: string[];
             notes?: string[];
+            consensus?: components["schemas"]["Consensus"];
             score: number;
         };
         Changes: {
@@ -921,6 +1187,249 @@ export interface operations {
             400: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    saveContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetContext"];
+            };
+        };
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                cid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    saveRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeverityRule"];
+            };
+        };
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                rid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    setFindingState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                fid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StateChange"];
+            };
+        };
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    saveAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Alert"];
+            };
+        };
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                aid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    setSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Schedule"];
+            };
+        };
+        responses: {
+            /** @description Organización actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    testAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+                aid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enviado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            404: components["responses"]["Error"];
+            502: components["responses"]["Error"];
         };
     };
     getIntel: {

@@ -24,6 +24,13 @@ export type CVEInfo = S["CVEInfo"];
 export type Confidence = S["Confidence"];
 export type SSVC = S["SSVC"];
 export type Range = S["Range"];
+export type AssetContext = S["AssetContext"];
+export type SeverityRule = S["SeverityRule"];
+export type FindingState = S["FindingState"];
+export type StateChange = S["StateChange"];
+export type Schedule = S["Schedule"];
+export type Alert = S["Alert"];
+export type Consensus = S["Consensus"];
 
 export interface DataSource {
   readonly mode: "api" | "demo";
@@ -44,6 +51,15 @@ export interface DataSource {
   intel(): Promise<IntelStatus>;
   updateIntel(): Promise<IntelStatus>;
   cve(id: string): Promise<CVEInfo>;
+  saveContext(id: string, c: AssetContext): Promise<Organization>;
+  deleteContext(id: string, cid: string): Promise<Organization>;
+  saveRule(id: string, r: SeverityRule): Promise<Organization>;
+  deleteRule(id: string, rid: string): Promise<Organization>;
+  setState(id: string, fid: string, c: StateChange): Promise<Organization>;
+  saveAlert(id: string, a: Alert): Promise<Organization>;
+  deleteAlert(id: string, aid: string): Promise<Organization>;
+  testAlert(id: string, aid: string): Promise<{ status: string }>;
+  setSchedule(id: string, s: Schedule): Promise<Organization>;
   exportUrl(id: string, format: "json" | "csv"): string | null;
 }
 

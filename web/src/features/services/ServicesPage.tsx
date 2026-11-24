@@ -4,6 +4,8 @@ import { confidenceLabel, priorityLabel } from "@/features/intel/labels";
 import { fmtDate } from "@/shared/lib/format";
 import { useOrgContext } from "@/features/orgs/context";
 
+const niceSource: Record<string, string> = { shodan: "Shodan", censys: "Censys", internetdb: "InternetDB" };
+
 export function ServicesPage() {
   const { snapshot: s } = useOrgContext();
   if (!s) return <Card><Empty title="Sin escaneos todavía" /></Card>;
@@ -16,7 +18,15 @@ export function ServicesPage() {
         </Empty>
       </Card>
     );
+  const c = s.consensus;
   return (
+    <div className="stack">
+    {c && (
+      <div className="callout">
+        <b>Consenso entre fuentes:</b> {c.sources.map((x) => niceSource[x] ?? x).join(" y ")} coinciden en <b>{c.all}</b> de {c.services} servicios.{" "}
+        {c.single > 0 && <>{c.single} los vio una sola fuente: puede ser un puerto que se cerró hace poco o que una de ellas todavía no escaneó.</>}
+      </div>
+    )}
     <Card className="card--flush">
       <div className="table-wrap">
         <table className="table">
@@ -95,7 +105,10 @@ export function ServicesPage() {
                 </td>
                 <td className="small muted">
                   {v.seen_at && !v.seen_at.startsWith("0001") ? fmtDate(v.seen_at) : "—"}
-                  <div className="cell-sub">{v.source}</div>
+                  <div className="cell-sub">
+                    {(v.seen_by ?? [v.source]).map((x) => niceSource[x] ?? x).join(" + ")}
+                    {s.consensus && (v.seen_by ?? []).length === 1 && <span title="Lo vio una sola fuente: puede ser un dato viejo" style={{ color: "var(--sev-media)" }}> · una sola fuente</span>}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -106,5 +119,6 @@ export function ServicesPage() {
         <span>Color = prioridad (rojo: corregir hoy) · borde punteado = por confirmar o improbable · KEV = explotada según CISA · pasá el mouse para ver el motivo</span>
       </div>
     </Card>
+    </div>
   );
 }

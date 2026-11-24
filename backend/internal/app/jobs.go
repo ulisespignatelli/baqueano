@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/ulisespignatelli/baqueano/backend/internal/domain"
 )
 
 // JobView es el estado visible de un escaneo en curso.
@@ -43,6 +45,22 @@ var ErrBusy = errors.New("ya hay un escaneo en curso para esta organización")
 
 // StartScan lanza un escaneo en segundo plano.
 func (s *Service) StartScan(orgID string) (*Job, error) {
+	return s.startJob(orgID, s.Scan)
+}
+
+// StartReassess reevalua el ultimo escaneo en segundo plano (puede tener que consultar la NVD).
+func (s *Service) StartReassess(orgID string) (*Job, error) {
+	if s.Intel == nil {
+		return nil, errors.New("no hay base de inteligencia configurada")
+	}
+	return s.startJob(orgID, s.Reassess)
+}
+
+func (s *Service) startJob(orgID string, run func(context.Context, string, Progress) (domain.Snapshot, error)) (*Job, error) {
+	return s.startJobDone(orgID, run, nil)
+}
+
+func (s *Service) startJobDone(orgID string, run func(context.Context, string, Progress) (domain.Snapshot, error), done func(error)) (*Job, error) {
 	if _, err := s.Repo.GetOrg(context.Background(), orgID); err != nil {
 		return nil, err
 	}
@@ -61,7 +79,10 @@ func (s *Service) StartScan(orgID string) (*Job, error) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 		defer cancel()
-		snap, err := s.Scan(ctx, orgID, func(m string) { j.set(func(v *JobView) { v.Message = m }) })
+		snap, err := run(ctx, orgID, func(m string) { j.set(func(v *JobView) { v.Message = m }) })
+		if done != nil {
+			done(err)
+		}
 		j.set(func(j *JobView) {
 			if err != nil {
 				j.Status, j.Error = "error", err.Error()

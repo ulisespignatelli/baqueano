@@ -39,6 +39,13 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	for _, m := range metas { // del mas nuevo al mas viejo
 		byOrg[m.OrgID] = append(byOrg[m.OrgID], m)
 	}
+	for _, org := range orgs {
+		if hasPolicy(org) && len(byOrg[org.ID]) > 0 {
+			if pm, err := s.SnapshotMetas(ctx, org.ID, 20); err == nil {
+				byOrg[org.ID] = pm
+			}
+		}
+	}
 	o := Overview{Orgs: []OrgSummary{}, BySeverity: map[string]int{}, Score: 100}
 	sum, n := 0, 0
 	for _, org := range orgs {
@@ -84,18 +91,26 @@ type Changes struct {
 	ClosedServices   []domain.Service `json:"closed_services"`
 	NewFindings      []domain.Finding `json:"new_findings"`
 	ResolvedFindings []domain.Finding `json:"resolved_findings"`
+	SeverityChanges  []SeverityChange `json:"severity_changes"` // mismo hallazgo, otra severidad (p. ej. entro en KEV)
 	NewAssets        []string         `json:"new_assets"`
 	GoneAssets       []string         `json:"gone_assets"`
 }
 
+// SeverityChange es un hallazgo que subio o bajo de severidad entre dos escaneos.
+type SeverityChange struct {
+	Finding domain.Finding  `json:"finding"`
+	Before  domain.Severity `json:"before"`
+	Up      bool            `json:"up"`
+}
+
 // Changes calcula las diferencias con el escaneo anterior.
 func (s *Service) Changes(ctx context.Context, snapID string) (Changes, error) {
-	cur, err := s.Repo.GetSnapshot(ctx, snapID)
+	cur, err := s.Snapshot(ctx, snapID)
 	if err != nil {
 		return Changes{}, err
 	}
 	c := Changes{NewServices: []domain.Service{}, ClosedServices: []domain.Service{}, NewFindings: []domain.Finding{},
-		ResolvedFindings: []domain.Finding{}, NewAssets: []string{}, GoneAssets: []string{}}
+		ResolvedFindings: []domain.Finding{}, SeverityChanges: []SeverityChange{}, NewAssets: []string{}, GoneAssets: []string{}}
 	metas, err := s.Repo.ListSnapshots(ctx, cur.OrgID)
 	if err != nil {
 		return c, err
@@ -109,7 +124,7 @@ func (s *Service) Changes(ctx context.Context, snapID string) (Changes, error) {
 	if prevID == "" {
 		return c, nil
 	}
-	prev, err := s.Repo.GetSnapshot(ctx, prevID)
+	prev, err := s.Snapshot(ctx, prevID)
 	if err != nil {
 		return c, err
 	}
@@ -143,10 +158,21 @@ func diff(prev, cur domain.Snapshot, c Changes) Changes {
 		cf[f.ID] = f
 	}
 	for id, f := range cf {
-		if _, ok := pf[id]; !ok {
+		p, ok := pf[id]
+		switch {
+		case !ok:
 			c.NewFindings = append(c.NewFindings, f)
+		case p.Severity != f.Severity:
+			c.SeverityChanges = append(c.SeverityChanges, SeverityChange{Finding: f, Before: p.Severity, Up: f.Severity.Rank() > p.Severity.Rank()})
 		}
 	}
+	sort.Slice(c.SeverityChanges, func(i, j int) bool {
+		a, b := c.SeverityChanges[i], c.SeverityChanges[j]
+		if a.Up != b.Up {
+			return a.Up
+		}
+		return a.Finding.Severity.Rank() > b.Finding.Severity.Rank()
+	})
 	for id, f := range pf {
 		if _, ok := cf[id]; !ok {
 			c.ResolvedFindings = append(c.ResolvedFindings, f)

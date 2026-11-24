@@ -109,8 +109,22 @@ func (s *FileStore) SaveOrg(_ context.Context, o domain.Organization) error {
 	if err := s.write("orgs", o.ID, o); err != nil {
 		return err
 	}
-	s.orgs[o.ID] = o
+	s.orgs[o.ID] = cloneOrg(o)
 	return nil
+}
+
+// cloneOrg copia una organizacion sin compartir listas ni mapas con la cache: quien la recibe puede
+// modificarla sin afectar lo guardado ni a otros pedidos en curso.
+func cloneOrg(o domain.Organization) domain.Organization {
+	b, err := json.Marshal(o)
+	if err != nil {
+		return o
+	}
+	var c domain.Organization
+	if json.Unmarshal(b, &c) != nil {
+		return o
+	}
+	return c
 }
 
 // GetOrg lee una organizacion.
@@ -121,7 +135,7 @@ func (s *FileStore) GetOrg(_ context.Context, id string) (domain.Organization, e
 	if !ok {
 		return o, app.ErrNotFound
 	}
-	return o, nil
+	return cloneOrg(o), nil
 }
 
 // ListOrgs lista las organizaciones por nombre.
@@ -130,10 +144,24 @@ func (s *FileStore) ListOrgs(_ context.Context) ([]domain.Organization, error) {
 	defer s.mu.RUnlock()
 	out := make([]domain.Organization, 0, len(s.orgs))
 	for _, o := range s.orgs {
-		out = append(out, o)
+		out = append(out, cloneOrg(o))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// DeleteSnapshot borra un escaneo.
+func (s *FileStore) DeleteSnapshot(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.metas[id]; !ok || !validID.MatchString(id) {
+		return app.ErrNotFound
+	}
+	if err := os.Remove(filepath.Join(s.dir, "snapshots", id+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	delete(s.metas, id)
+	return nil
 }
 
 // DeleteOrg borra una organizacion y sus escaneos.

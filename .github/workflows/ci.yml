@@ -53,6 +53,11 @@ jobs:
       - run: make build
       - name: La demo se genera con el binario
         run: ./bin/baqueano demo --data /tmp/demo --out /tmp/demo-out
+      - name: Benchmark de precisión del motor de inteligencia
+        run: |
+          cd backend
+          ../bin/baqueano bench --corpus ../bench --out /tmp/benchmark.md | tee -a "$GITHUB_STEP_SUMMARY"
+          cat /tmp/benchmark.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: baqueano-linux-amd64

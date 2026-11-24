@@ -147,6 +147,7 @@ type shodanBanner struct {
 	Version   string   `json:"version"`
 	CPE23     []string `json:"cpe23"`
 	CPE       []string `json:"cpe"`
+	Data      string   `json:"data"`
 	Tags      []string `json:"tags"`
 	Hostnames []string `json:"hostnames"`
 	Org       string   `json:"org"`
@@ -234,6 +235,7 @@ func bannerToService(b shodanBanner, src string) domain.Service {
 	if sv.Transport == "" {
 		sv.Transport = "tcp"
 	}
+	sv.Banner = firstLine(b.Data)
 	sv.CPEs = b.CPE23
 	if len(sv.CPEs) == 0 {
 		sv.CPEs = b.CPE
@@ -248,7 +250,7 @@ func bannerToService(b shodanBanner, src string) domain.Service {
 		sv.SeenAt = t.UTC()
 	}
 	for id, v := range b.Vulns {
-		vu := domain.Vuln{CVE: strings.ToUpper(id), KEV: v.KEV, Verified: v.Verified, Summary: v.Summary}
+		vu := domain.Vuln{CVE: strings.ToUpper(id), KEV: v.KEV, Verified: v.Verified, Summary: v.Summary, Origin: src}
 		if v.CVSS != nil {
 			vu.CVSS = *v.CVSS
 		}
@@ -327,7 +329,7 @@ func (i *InternetDB) Host(ctx context.Context, ip string) ([]domain.Service, boo
 		sv := domain.Service{IP: ip, Port: p, Transport: "tcp", Tags: r.Tags, CPEs: r.CPEs, Hostnames: r.Hostnames, Source: "internetdb"}
 		if n == 0 {
 			for _, v := range r.Vulns {
-				sv.Vulns = append(sv.Vulns, domain.Vuln{CVE: strings.ToUpper(v)})
+				sv.Vulns = append(sv.Vulns, domain.Vuln{CVE: strings.ToUpper(v), Origin: "internetdb"})
 			}
 		}
 		out = append(out, sv)
@@ -370,4 +372,23 @@ func less(a, b domain.Vuln) bool {
 		return a.CVSS > b.CVSS
 	}
 	return a.CVE < b.CVE
+}
+
+// firstLine devuelve la linea del banner que identifica el software: el encabezado Server en HTTP o
+// la primera linea en el resto ("SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.10"). Alcanza para reconocer
+// la distro sin guardar contenido de mas.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if len(l) > 7 && strings.EqualFold(l[:7], "server:") {
+			return strings.TrimSpace(l)
+		}
+	}
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	return s
 }

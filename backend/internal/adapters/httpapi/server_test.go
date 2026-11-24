@@ -18,6 +18,7 @@ import (
 	"github.com/ulisespignatelli/baqueano/backend/internal/app"
 	"github.com/ulisespignatelli/baqueano/backend/internal/demodata"
 	"github.com/ulisespignatelli/baqueano/backend/internal/domain"
+	"github.com/ulisespignatelli/baqueano/backend/internal/intel"
 )
 
 func setup(t *testing.T, cfg Config) (*Server, *app.Service) {
@@ -79,7 +80,7 @@ func TestReadFlow(t *testing.T) {
 		t.Fatal("changes")
 	}
 	rec = do(h, "GET", "/api/v1/snapshots/"+org.Latest.ID+"/export?format=csv", nil, nil)
-	if rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "severidad,regla") {
+	if rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "severidad,prioridad,confianza,regla") {
 		t.Fatalf("csv: %d", rec.Code)
 	}
 	for _, p := range []string{"/api/v1/orgs/nope", "/api/v1/snapshots/nope", "/api/v1/snapshots/..%2F..%2Fetc%2Fpasswd", "/api/v1/jobs/nope", "/api/v1/nada"} {
@@ -153,7 +154,7 @@ func TestCSVInjection(t *testing.T) {
 func TestDemoSnapshot(t *testing.T) {
 	_, svc := setup(t, Config{})
 	out := t.TempDir()
-	if err := WriteSnapshot(context.Background(), svc, out); err != nil {
+	if err := WriteSnapshot(context.Background(), svc, out, intel.NewMemory(demodata.Intel())); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"health.json", "overview.json"} {
@@ -164,5 +165,118 @@ func TestDemoSnapshot(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(out, "snapshots"))
 	if len(entries) != 6 { // 3 escaneos: .json + carpeta con changes.json
 		t.Errorf("snapshots: %d", len(entries))
+	}
+}
+
+func TestIntelAndReassess(t *testing.T) {
+	eng := intel.NewMemory(demodata.Intel())
+	h, svc := setup(t, Config{Intel: eng})
+	svc.Intel = eng
+	mut := map[string]string{"X-Requested-With": "baqueano"}
+
+	rec := do(h, "GET", "/api/v1/intel", nil, nil)
+	var st intel.Status
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &st) != nil || st.Records < 5 || len(st.Sources) != 5 || st.Online {
+		t.Fatalf("estado: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(h, "GET", "/api/v1/intel/cves/CVE-2099-0101", nil, nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"kev"`) || !strings.Contains(rec.Body.String(), "7.0.12") {
+		t.Fatalf("cve: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(h, "GET", "/api/v1/intel/cves/CVE-2099-9999", nil, nil); rec.Code != 404 {
+		t.Errorf("CVE desconocida: %d", rec.Code)
+	}
+	if rec := do(h, "GET", "/api/v1/intel/cves/no-es-cve", nil, nil); rec.Code != 400 {
+		t.Errorf("identificador inválido: %d", rec.Code)
+	}
+	if rec := do(h, "POST", "/api/v1/intel/update", nil, mut); rec.Code != 502 {
+		t.Errorf("actualizar sin conexión debía fallar con 502: %d", rec.Code)
+	}
+
+	// Reevaluar: CISA agrega a KEV una CVE que antes no estaba; sin escanear, sube a crítica.
+	eng.DB().KEV["CVE-2099-0106"] = intel.KEVEntry{Due: "2099-03-01", Ransomware: true}
+	ov, _ := svc.Overview(context.Background())
+	var acme string
+	for _, o := range ov.Orgs {
+		if strings.HasPrefix(o.Name, "Acme") {
+			acme = o.ID
+		}
+	}
+	rec = do(h, "POST", "/api/v1/orgs/"+acme+"/reassess", nil, mut)
+	if rec.Code != 202 {
+		t.Fatalf("reassess: %d %s", rec.Code, rec.Body)
+	}
+	var job app.JobView
+	_ = json.Unmarshal(rec.Body.Bytes(), &job)
+	for i := 0; i < 100 && job.Status == "running"; i++ {
+		time.Sleep(20 * time.Millisecond)
+		_ = json.Unmarshal(do(h, "GET", "/api/v1/jobs/"+job.ID, nil, nil).Body.Bytes(), &job)
+	}
+	if job.Status != "done" {
+		t.Fatalf("job: %+v", job)
+	}
+	var snap SnapshotView
+	_ = json.Unmarshal(do(h, "GET", "/api/v1/snapshots/"+job.SnapshotID, nil, nil).Body.Bytes(), &snap)
+	found := false
+	for _, f := range snap.Findings {
+		if f.CVE == "CVE-2099-0106" && f.Severity == domain.SevCritical && f.Vuln != nil && f.Vuln.Ransomware {
+			found = true
+		}
+	}
+	if !found || !strings.HasPrefix(snap.Sources[0], "Reevaluación sin escanear") {
+		t.Errorf("la reevaluación debía subir CVE-2099-0106 a crítica: %+v", snap.Sources)
+	}
+	rec = do(h, "GET", "/api/v1/snapshots/"+job.SnapshotID+"/changes", nil, nil)
+	if !strings.Contains(rec.Body.String(), "CVE-2099-0106") || !strings.Contains(rec.Body.String(), `"up":true`) {
+		t.Errorf("los cambios debían mostrar el hallazgo nuevo: %s", rec.Body)
+	}
+}
+
+func TestWorkflowAndAlertsAPI(t *testing.T) {
+	h, svc := setup(t, Config{})
+	mut := map[string]string{"X-Requested-With": "baqueano"}
+	ov, _ := svc.Overview(context.Background())
+	id := ov.Orgs[0].ID
+	secret := "https://hooks.slack.com/services/T0/B0/MUYSECRETO"
+	steps := []struct {
+		method, path string
+		body         any
+		want         int
+	}{
+		{"POST", "/api/v1/orgs/" + id + "/contexts", map[string]any{"match": "*.acme-logistica.example", "environment": "produccion", "criticality": "alta"}, 200},
+		{"POST", "/api/v1/orgs/" + id + "/contexts", map[string]any{"match": "no valido"}, 400},
+		{"POST", "/api/v1/orgs/" + id + "/rules", map[string]any{"rule": "PX-SSH", "severity": "baja", "note": "SSH con llaves y MFA"}, 200},
+		{"POST", "/api/v1/orgs/" + id + "/alerts", map[string]any{"name": "Slack", "channel": "slack", "target": secret, "events": []string{"kev"}, "enabled": true}, 200},
+		{"POST", "/api/v1/orgs/" + id + "/alerts", map[string]any{"name": "Mal", "channel": "slack", "target": "http://x.example", "events": []string{"kev"}}, 400},
+		{"POST", "/api/v1/orgs/" + id + "/schedule", map[string]any{"enabled": true, "hours": 168, "mode": "escanear"}, 200},
+		{"POST", "/api/v1/orgs/" + id + "/findings/nope/state", map[string]any{"status": "en-curso"}, 200},
+		{"POST", "/api/v1/orgs/" + id + "/findings/nope/state", map[string]any{"status": "aceptado", "note": "x"}, 400},
+		{"DELETE", "/api/v1/orgs/" + id + "/rules/inexistente", nil, 404},
+	}
+	for _, s := range steps {
+		rec := do(h, s.method, s.path, s.body, mut)
+		if rec.Code != s.want {
+			t.Errorf("%s %s: %d (quería %d) %s", s.method, s.path, rec.Code, s.want, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "MUYSECRETO") {
+			t.Fatalf("la URL del webhook no debe volver al navegador: %s %s", s.method, s.path)
+		}
+	}
+	for _, p := range []string{"/api/v1/overview", "/api/v1/orgs", "/api/v1/orgs/" + id} {
+		if rec := do(h, "GET", p, nil, nil); strings.Contains(rec.Body.String(), "MUYSECRETO") || rec.Code != 200 {
+			t.Fatalf("%s expone el secreto o falló: %d", p, rec.Code)
+		}
+	}
+	o, _ := svc.Repo.GetOrg(context.Background(), id)
+	last := o.Alerts[len(o.Alerts)-1]
+	if last.Name != "Slack" || last.Target != secret {
+		t.Fatal("lo guardado debe conservar la URL completa")
+	}
+	rec := do(h, "GET", "/api/v1/snapshots/"+ov.Orgs[0].Latest.ID, nil, nil)
+	if !strings.Contains(rec.Body.String(), `"base_severity"`) || !strings.Contains(rec.Body.String(), "SSH con llaves y MFA") {
+		t.Error("el escaneo debía mostrarse con la política aplicada")
+	}
+	if rec := do(h, "POST", "/api/v1/orgs/"+id+"/alerts/"+last.ID+"/test", nil, mut); rec.Code != 502 {
+		t.Errorf("probar sin emisor configurado debía fallar con 502: %d", rec.Code)
 	}
 }

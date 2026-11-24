@@ -14,9 +14,15 @@ import (
 	"github.com/ulisespignatelli/baqueano/backend/internal/discovery"
 	"github.com/ulisespignatelli/baqueano/backend/internal/domain"
 	"github.com/ulisespignatelli/baqueano/backend/internal/exposure"
+	"github.com/ulisespignatelli/baqueano/backend/internal/intel"
 	"github.com/ulisespignatelli/baqueano/backend/internal/rules"
 	"github.com/ulisespignatelli/baqueano/backend/internal/scope"
 )
+
+// Intel es el motor de inteligencia de vulnerabilidades (intel.Engine lo cumple).
+type Intel interface {
+	Enrich(ctx context.Context, svcs []domain.Service, progress func(string)) ([]domain.Service, intel.Report)
+}
 
 // Discoverer es el puerto de descubrimiento (discovery.Discoverer lo cumple).
 type Discoverer interface {
@@ -29,10 +35,13 @@ type Service struct {
 	DNS       scope.Resolver
 	Discovery Discoverer
 	Exposure  exposure.Source // nil = sin fuente (solo descubrimiento)
+	Intel     Intel           // nil = se usa lo que informa la fuente, sin evaluar
+	Notifier  Notifier        // nil = no se envian alertas
 	Now       func() time.Time
 	MaxIPs    int // tope de IP consultadas por escaneo (por defecto 300)
 	MaxPages  int // paginas de busqueda por red declarada (por defecto 2 = 200 servicios, 2 creditos)
 
+	editMu sync.Mutex
 	jobsMu sync.Mutex
 	jobs   map[string]*Job
 }
@@ -322,7 +331,10 @@ func (s *Service) Scan(ctx context.Context, orgID string, progress Progress) (do
 	if s.Exposure == nil {
 		snap.Notes = append(snap.Notes, "Sin fuente de exposición configurada: solo se hizo el descubrimiento de activos.")
 	} else {
-		snap.Sources = append(snap.Sources, map[string]string{"shodan": "Shodan (API REST)", "internetdb": "Shodan InternetDB"}[s.Exposure.Name()])
+		snap.Sources = append(snap.Sources, exposure.Label(s.Exposure.Name()))
+		if b, ok := s.Exposure.(interface{ BeginScan() }); ok {
+			b.BeginScan()
+		}
 		// 2a. Redes declaradas: una busqueda por red si la fuente lo permite.
 		if ns, ok := s.Exposure.(exposure.NetworkSearcher); ok {
 			for _, n := range snap.Networks {
@@ -375,6 +387,11 @@ func (s *Service) Scan(ctx context.Context, orgID string, progress Progress) (do
 		}
 	}
 
+	if m, ok := s.Exposure.(*exposure.Multi); ok {
+		snap.Notes = append(snap.Notes, m.Notes()...)
+		snap.Consensus = consensus(m.SourceNames(), services)
+	}
+
 	// 3. Activos de redes declaradas que no tienen nombre
 	for _, sv := range services {
 		if !hasIP(assets, sv.IP) {
@@ -397,12 +414,14 @@ func (s *Service) Scan(ctx context.Context, orgID string, progress Progress) (do
 	snap.Services = services
 
 	// 4. Hallazgos
+	s.evaluateVulns(ctx, &snap, progress)
 	progress("Evaluando hallazgos…")
 	snap.Findings = rules.Evaluate(snap.Assets, snap.Services, rules.Options{Now: s.now()})
 	snap.FinishedAt = s.now()
 	if err := s.Repo.SaveSnapshot(ctx, snap); err != nil {
 		return snap, err
 	}
+	s.afterSnapshot(ctx, snap)
 	progress("Listo.")
 	return snap, nil
 }
@@ -446,4 +465,96 @@ func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// evaluateVulns pasa los servicios por el motor de inteligencia, si hay uno.
+func (s *Service) evaluateVulns(ctx context.Context, snap *domain.Snapshot, progress Progress) {
+	if s.Intel == nil || len(snap.Services) == 0 {
+		return
+	}
+	progress("Evaluando vulnerabilidades con la base de inteligencia…")
+	svcs, rep := s.Intel.Enrich(ctx, snap.Services, func(m string) { progress(m) })
+	snap.Services = svcs
+	src := fmt.Sprintf("Inteligencia de vulnerabilidades: %d CVE evaluadas, %d descartadas por versión", rep.Candidates, rep.Dismissed)
+	if rep.FromNVD > 0 {
+		src += fmt.Sprintf(", %d encontradas por Baqueano", rep.FromNVD)
+	}
+	snap.Sources = append(snap.Sources, src)
+	snap.Notes = append(snap.Notes, rep.Notes...)
+}
+
+// Reassess vuelve a evaluar el ultimo escaneo de una organizacion con la inteligencia actual, sin
+// consultar la fuente de exposicion: sirve para enterarse de CVE nuevas o de cambios en KEV/EPSS
+// sin gastar creditos. Genera un escaneo nuevo marcado como reevaluacion.
+func (s *Service) Reassess(ctx context.Context, orgID string, progress Progress) (domain.Snapshot, error) {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	if s.Intel == nil {
+		return domain.Snapshot{}, errors.New("no hay base de inteligencia configurada")
+	}
+	o, err := s.Repo.GetOrg(ctx, orgID)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	metas, err := s.Repo.ListSnapshots(ctx, o.ID)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	if len(metas) == 0 {
+		return domain.Snapshot{}, errors.New("la organización todavía no tiene escaneos para reevaluar")
+	}
+	prev, err := s.Repo.GetSnapshot(ctx, metas[0].ID)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	base := prev.StartedAt
+	snap := domain.Snapshot{ID: newID(), OrgID: o.ID, OrgName: o.Name, StartedAt: s.now(), Domains: prev.Domains, Networks: prev.Networks,
+		Authorization: prev.Authorization, Assets: prev.Assets}
+	snap.Sources = []string{"Reevaluación sin escanear: exposición vista el " + base.Format("2006-01-02 15:04") + " UTC"}
+	for _, x := range prev.Sources {
+		if !strings.HasPrefix(x, "Inteligencia de vulnerabilidades") && !strings.HasPrefix(x, "Reevaluación") {
+			snap.Sources = append(snap.Sources, x)
+		}
+	}
+	// Volver a las CVE tal como las propuso la fuente: las encontradas por Baqueano se recalculan.
+	for _, sv := range prev.Services {
+		raw := sv
+		raw.Vulns, raw.Dismissed, raw.EOL = nil, nil, nil
+		for _, v := range append(append([]domain.Vuln(nil), sv.Vulns...), sv.Dismissed...) {
+			if v.Origin == "baqueano" {
+				continue
+			}
+			raw.Vulns = append(raw.Vulns, domain.Vuln{CVE: v.CVE, Verified: v.Verified, Origin: v.Origin})
+		}
+		snap.Services = append(snap.Services, raw)
+	}
+	s.evaluateVulns(ctx, &snap, progress)
+	progress("Evaluando hallazgos…")
+	snap.Findings = rules.Evaluate(snap.Assets, snap.Services, rules.Options{Now: s.now()})
+	snap.FinishedAt = s.now()
+	if err := s.Repo.SaveSnapshot(ctx, snap); err != nil {
+		return snap, err
+	}
+	s.afterSnapshot(ctx, snap)
+	progress("Listo.")
+	return snap, nil
+}
+
+// consensus resume cuanto coinciden las fuentes: un puerto que ven todas es mas confiable que uno que ve
+// una sola (puede ser un dato viejo o un error de identificacion).
+func consensus(sources []string, svcs []domain.Service) *domain.Consensus {
+	if len(sources) < 2 {
+		return nil
+	}
+	c := &domain.Consensus{Sources: sources, Services: len(svcs)}
+	for _, sv := range svcs {
+		switch {
+		case len(sv.SeenBy) >= len(sources):
+			c.All++
+		case len(sv.SeenBy) == 1:
+			c.Single++
+		}
+	}
+	return c
 }

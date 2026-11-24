@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-go web web-demo demo-data test test-go test-web lint api-types serve clean
+.PHONY: docker build build-go web web-demo demo-data test test-go test-web lint api-types serve clean bench
 
 build: web build-go ## Panel + binario con el panel embebido
 
@@ -29,6 +29,9 @@ test-web:
 lint:
 	cd backend && test -z "$$(gofmt -l .)" && go vet ./...
 
+bench: build-go ## Benchmark de precisión del motor (escribe docs/benchmark.md)
+	cd backend && ../bin/baqueano bench --corpus ../bench --out ../docs/benchmark.md
+
 api-types:
 	cd web && npm run gen:api
 
@@ -37,3 +40,6 @@ serve: build
 
 clean:
 	rm -rf bin web/dist backend/internal/adapters/httpapi/ui/dist
+
+docker: ## Imagen local
+	docker build --build-arg VERSION=$(VERSION) -t baqueano:$(VERSION) .

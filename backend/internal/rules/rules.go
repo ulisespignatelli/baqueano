@@ -119,12 +119,16 @@ func Evaluate(assets []domain.Asset, services []domain.Service, opt Options) []d
 		// VU-*: vulnerabilidades
 		for _, v := range s.Vulns {
 			sev, title, detail := vulnSeverity(v)
+			rec := "Actualizar el componente a una versión corregida. Si no es posible ya, restringir el acceso al servicio " +
+				"o aplicar la mitigación del fabricante." + ifs(!v.Verified && v.Confidence == "", " Antes, confirmar la versión real: Shodan la infiere del banner.", "")
+			if v.Priority != "" {
+				rec = vulnRecommendation(v)
+			}
+			vv := v
 			add(domain.Finding{Rule: "VU-01", Category: "vulnerabilidad", Severity: sev, Asset: where, CVE: v.CVE,
-				Title:  fmt.Sprintf("%s en %s", v.CVE, ifs(prod != "", prod, fmt.Sprintf("puerto %d", s.Port))) + title,
-				Detail: detail + ifs(v.Summary != "", " "+v.Summary, ""),
-				Recommendation: "Actualizar el componente a una versión corregida. Si no es posible ya, restringir el acceso al servicio " +
-					"o aplicar la mitigación del fabricante." + ifs(!v.Verified, " Antes, confirmar la versión real: Shodan la infiere del banner.", ""),
-				Evidence: evidence(s)})
+				Title:          fmt.Sprintf("%s en %s", v.CVE, ifs(prod != "", prod, fmt.Sprintf("puerto %d", s.Port))) + title,
+				Detail:         detail + ifs(v.Summary != "", " "+v.Summary, ""),
+				Recommendation: rec, Evidence: evidence(s), Vuln: &vv})
 		}
 
 		// TLS-*
@@ -171,7 +175,13 @@ func Evaluate(assets []domain.Asset, services []domain.Service, opt Options) []d
 				}
 			}
 		}
-		if hasTag(s, "eol-product") || hasTag(s, "eol-os") {
+		if e := s.EOL; e != nil {
+			detail := fmt.Sprintf("%s%s corre %s, de la rama %s, que dejó de recibir parches de seguridad%s.", s.IP, host,
+				ifs(prod != "", prod, e.Product), e.Cycle, ifs(e.Since != "", " el "+e.Since, ""))
+			add(domain.Finding{ID: domain.FindingID("HY-02", s.IP, prod), Rule: "HY-02", Category: "higiene", Severity: domain.SevMedium, Asset: s.IP,
+				Title: "Software sin soporte del fabricante", Detail: detail + " Fuente: " + e.Source + ".",
+				Recommendation: "Pasar a una rama con soporte. Las vulnerabilidades nuevas de esta rama ya no se van a corregir.", Evidence: evidence(s)})
+		} else if hasTag(s, "eol-product") || hasTag(s, "eol-os") {
 			add(domain.Finding{ID: domain.FindingID("HY-02", s.IP, prod), Rule: "HY-02", Category: "higiene", Severity: domain.SevMedium, Asset: s.IP,
 				Title: "Software sin soporte del fabricante", Detail: fmt.Sprintf("%s%s corre %s, que ya no recibe actualizaciones de seguridad.", s.IP, host, ifs(prod != "", prod, "un producto")),
 				Recommendation: "Planificar la actualización a una versión con soporte.", Evidence: evidence(s)})
@@ -196,7 +206,38 @@ func Evaluate(assets []domain.Asset, services []domain.Service, opt Options) []d
 }
 
 // vulnSeverity: KEV primero, despues EPSS, despues CVSS; las no verificadas bajan un nivel.
+// vulnRecommendation arma la recomendacion con lo que sabe el motor de inteligencia.
+func vulnRecommendation(v domain.Vuln) string {
+	var b strings.Builder
+	switch {
+	case strings.HasPrefix(v.FixedIn, "una versión posterior"):
+		b.WriteString("Actualizar a " + v.FixedIn + ".")
+	case v.FixedIn != "":
+		b.WriteString("Actualizar a " + v.FixedIn + " o posterior.")
+	default:
+		b.WriteString("Actualizar a una versión corregida según el aviso del fabricante.")
+	}
+	if v.KEV {
+		b.WriteString(" Está en el catálogo KEV de CISA" + ifs(v.KEVDue != "", " (las agencias de EE. UU. tienen plazo hasta el "+v.KEVDue+")", "") + ": si no se puede actualizar ya, sacar el servicio de internet o aplicar la mitigación del fabricante, y revisar si hubo intrusión.")
+	} else {
+		b.WriteString(" Mientras tanto, restringir el acceso al servicio.")
+	}
+	switch v.Confidence {
+	case "por-confirmar":
+		b.WriteString(" Antes, confirmar la versión instalada en el equipo (y, si es un paquete de la distribución, su aviso de seguridad).")
+	case "improbable":
+		b.WriteString(" Es probable que esta versión no esté afectada: confirmarlo con el aviso del fabricante y cerrar el hallazgo.")
+	}
+	return b.String()
+}
+
 func vulnSeverity(v domain.Vuln) (domain.Severity, string, string) {
+	if v.Priority != "" {
+		sev := map[string]domain.Severity{"P1": domain.SevCritical, "P2": domain.SevHigh, "P3": domain.SevMedium, "P4": domain.SevLow}[v.Priority]
+		title := map[string]string{"por-confirmar": " (por confirmar)", "improbable": " (probablemente no aplica)"}[v.Confidence]
+		label := map[string]string{"P1": "Corregir hoy", "P2": "Corregir esta semana", "P3": "Corregir este mes", "P4": "Planificar"}[v.Priority]
+		return sev, title, fmt.Sprintf("%s: %s. %s", label, v.PriorityReason, v.Reason)
+	}
 	var sev domain.Severity
 	var why string
 	switch {
@@ -249,7 +290,11 @@ func evidence(s domain.Service) []string {
 	if s.Org != "" {
 		e = append(e, "red: "+s.Org)
 	}
-	if !s.SeenAt.IsZero() {
+	if len(s.SeenBy) > 1 {
+		e = append(e, "visto por: "+strings.Join(s.SeenBy, " y ")+ifs(!s.SeenAt.IsZero(), " (último: "+s.SeenAt.Format("2006-01-02")+")", ""))
+	} else if len(s.SeenBy) == 1 && !s.SeenAt.IsZero() {
+		e = append(e, "visto solo por "+s.SeenBy[0]+": "+s.SeenAt.Format("2006-01-02"))
+	} else if !s.SeenAt.IsZero() {
 		e = append(e, "visto por "+s.Source+": "+s.SeenAt.Format("2006-01-02"))
 	} else if s.Source != "" {
 		e = append(e, "fuente: "+s.Source)

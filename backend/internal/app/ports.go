@@ -22,6 +22,7 @@ type Repository interface {
 	GetSnapshot(ctx context.Context, id string) (domain.Snapshot, error)
 	// ListSnapshots devuelve los resumenes de una organizacion (o de todas si orgID es ""), del mas nuevo al mas viejo.
 	ListSnapshots(ctx context.Context, orgID string) ([]SnapshotMeta, error)
+	DeleteSnapshot(ctx context.Context, id string) error
 }
 
 // SnapshotMeta es un escaneo sin el detalle.
@@ -44,8 +45,12 @@ func Meta(s domain.Snapshot) SnapshotMeta {
 	m := SnapshotMeta{ID: s.ID, OrgID: s.OrgID, OrgName: s.OrgName, StartedAt: s.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 		FinishedAt: s.FinishedAt.Format("2006-01-02T15:04:05Z07:00"), Score: s.Score(), Assets: len(s.Assets), IPs: len(s.IPs()),
 		Services: len(s.Services), Findings: len(s.Findings), BySeverity: map[string]int{}}
+	m.Findings = 0
 	for _, f := range s.Findings {
-		m.BySeverity[string(f.Severity)]++
+		if f.Active() {
+			m.BySeverity[string(f.Severity)]++
+			m.Findings++
+		}
 	}
 	return m
 }

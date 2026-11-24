@@ -6,6 +6,8 @@ package demodata
 import (
 	"context"
 	"encoding/json"
+	"github.com/ulisespignatelli/baqueano/backend/internal/exposure"
+	"github.com/ulisespignatelli/baqueano/backend/internal/intel"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +69,41 @@ func (e *Exposure) Host(_ context.Context, ip string) ([]domain.Service, bool, e
 	e.Calls++
 	v, ok := e.Hosts[ip]
 	return v, ok, nil
+}
+
+// Second es una segunda fuente ficticia ("censys") que coincide en parte con la primera: no ve algunos
+// puertos y ve uno que la otra no. Sirve para mostrar el consenso entre fuentes.
+type Second struct{ Hosts map[string][]domain.Service }
+
+func (e *Second) Name() string { return "censys" }
+
+func (e *Second) Host(_ context.Context, ip string) ([]domain.Service, bool, error) {
+	v, ok := e.Hosts[ip]
+	return v, ok, nil
+}
+
+// SecondFrom deriva la segunda fuente de la primera.
+func SecondFrom(e *Exposure, now time.Time) *Second {
+	skip := map[string]bool{"198.51.100.20/tcp/993": true, "203.0.113.12/tcp/502": true, "198.51.100.60/tcp/443": true}
+	out := &Second{Hosts: map[string][]domain.Service{}}
+	for ip, svcs := range e.Hosts {
+		for _, sv := range svcs {
+			if skip[sv.Key()] || strings.HasPrefix(ip, "192.0.2.") {
+				continue
+			}
+			c := sv
+			c.Source, c.SeenAt, c.Banner = "censys", now.Add(-36*time.Hour), ""
+			c.Vulns = nil
+			for _, v := range sv.Vulns {
+				v.Origin = "censys"
+				c.Vulns = append(c.Vulns, v)
+			}
+			out.Hosts[ip] = append(out.Hosts[ip], c)
+		}
+	}
+	out.Hosts["198.51.100.10"] = append(out.Hosts["198.51.100.10"], domain.Service{IP: "198.51.100.10", Port: 8443, Transport: "tcp", Module: "http",
+		Product: "nginx", Version: "1.24.0", Title: "Acme Logística (staging)", Source: "censys", SeenAt: now.Add(-36 * time.Hour)})
+	return out
 }
 
 func (e *Exposure) SearchNetwork(_ context.Context, cidr string, _ int) ([]domain.Service, error) {
@@ -149,7 +186,11 @@ func World(now time.Time, week int, tokens map[string]string) (*DNS, map[string]
 	hosts := map[string][]domain.Service{
 		"198.51.100.10": {
 			svc("198.51.100.10", 80, "http", "nginx", "1.24.0", func(s *domain.Service) { s.Title = "Acme Logística" }),
-			svc("198.51.100.10", 443, "https", "nginx", "1.24.0", cert("www."+Acme, now.Add(70*day), "TLSv1.2", "TLSv1.3")),
+			svc("198.51.100.10", 443, "https", "nginx", "1.24.0", func(s *domain.Service) {
+				cert("www."+Acme, now.Add(70*day), "TLSv1.2", "TLSv1.3")(s)
+				s.Banner = "Server: nginx/1.24.0"
+				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0105", Origin: "shodan"}} // ya corregida en 1.22.1: el motor la descarta
+			}),
 		},
 		"198.51.100.20": {
 			svc("198.51.100.20", 25, "smtp", "Postfix smtpd", "", nil),
@@ -159,27 +200,30 @@ func World(now time.Time, week int, tokens map[string]string) (*DNS, map[string]
 			svc("198.51.100.30", 443, "https", "Fortinet FortiGate SSL VPN", "", func(s *domain.Service) {
 				s.Title = "FortiGate - Login"
 				s.Cert = &domain.Cert{Subject: "vpn." + Acme, Issuer: "CA de ejemplo", NotAfter: now.Add(200 * day), Versions: []string{"TLSv1.2"}}
-				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0101", CVSS: 9.8, EPSS: 0.94, KEV: true, Verified: true,
-					Summary: "Vulnerabilidad ficticia de ejemplo: ejecución remota en el portal SSL VPN."}}
+				s.Version = "7.0.11"
+				s.CPEs = []string{"cpe:2.3:o:fortinet:fortios:7.0.11"}
+				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0101", Verified: true, Origin: "shodan"}}
 			}),
 		},
 		"198.51.100.40": {
 			svc("198.51.100.40", 3000, "http", "Grafana", "9.1.0", func(s *domain.Service) {
 				s.Title = "Grafana"
-				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0102", CVSS: 7.5, EPSS: 0.03, Verified: false, Summary: "Vulnerabilidad ficticia de ejemplo: lectura de archivos."}}
+				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0102", Origin: "shodan"}}
 			}),
 		},
 		"198.51.100.50": {
 			svc("198.51.100.50", 21, "ftp", "vsftpd", "3.0.3", nil),
-			svc("198.51.100.50", 22, "ssh", "OpenSSH", "8.9p1", nil),
+			svc("198.51.100.50", 22, "ssh", "OpenSSH", "8.9p1", func(s *domain.Service) {
+				s.Banner = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.10"
+				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0104", Origin: "shodan"}}
+			}),
 		},
 		"198.51.100.60": {
 			svc("198.51.100.60", 80, "http", "Apache httpd", "2.2.15", func(s *domain.Service) {
-				s.Tags = []string{"eol-product"}
-				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0103", CVSS: 9.8, EPSS: 0.002, Verified: false, Summary: "Vulnerabilidad ficticia de ejemplo inferida por la versión."}}
+				s.Vulns = []domain.Vuln{{CVE: "CVE-2099-0103", Origin: "shodan"}}
 			}),
 			svc("198.51.100.60", 443, "https", "Apache httpd", "2.2.15", func(s *domain.Service) {
-				s.Tags = []string{"eol-product", "self-signed"}
+				s.Tags = []string{"self-signed"}
 				s.Cert = &domain.Cert{Subject: "legacy." + Acme, Issuer: "legacy." + Acme, NotAfter: now.Add(-40 * day), Expired: true, SelfSigned: true, Versions: []string{"TLSv1", "TLSv1.1", "TLSv1.2"}}
 			}),
 		},
@@ -215,7 +259,13 @@ func World(now time.Time, week int, tokens map[string]string) (*DNS, map[string]
 // (Acme dos veces, con una semana de diferencia). Devuelve la exposicion usada en el ultimo escaneo.
 func Build(ctx context.Context, repo app.Repository, start time.Time) (*Exposure, error) {
 	now := start
-	svc := &app.Service{Repo: repo, Now: func() time.Time { return now }}
+	eng := intel.NewMemory(Intel())
+	eng.Now = func() time.Time { return now }
+	// La primera semana CVE-2099-0102 todavia no esta en KEV; la segunda CISA la agrega y el hallazgo
+	// sube de severidad sin que cambie nada en el servidor.
+	kev0102 := eng.DB().KEV["CVE-2099-0102"]
+	delete(eng.DB().KEV, "CVE-2099-0102")
+	svc := &app.Service{Repo: repo, Now: func() time.Time { return now }, Intel: eng}
 	// Acme verifica sus dominios en DNS; Clínica Norte usa el alcance declarado (sin tocar el DNS).
 	acme, err := svc.CreateOrg(ctx, app.NewOrg{Name: "Acme Logística", Domains: []string{Acme}})
 	if err != nil {
@@ -229,11 +279,14 @@ func Build(ctx context.Context, repo app.Repository, start time.Time) (*Exposure
 	var last *Exposure
 	for week := 0; week < 2; week++ {
 		now = start.Add(time.Duration(week) * 7 * 24 * time.Hour)
+		if week == 1 {
+			eng.DB().KEV["CVE-2099-0102"] = kev0102
+		}
 		dns, names, exp := World(now, week, tokens)
 		ct := CTServer(names)
 		d := discovery.New()
 		d.CTBase, d.DNS = ct.URL, dns
-		svc.DNS, svc.Discovery, svc.Exposure = dns, d, exp
+		svc.DNS, svc.Discovery, svc.Exposure = dns, d, exposure.NewMulti(exp, SecondFrom(exp, now))
 		if _, err := svc.Scan(ctx, acme.ID, nil); err != nil {
 			ct.Close()
 			return nil, err
@@ -247,5 +300,110 @@ func Build(ctx context.Context, repo app.Repository, start time.Time) (*Exposure
 		ct.Close()
 		last = exp
 	}
+	if err := demoPolicy(ctx, svc, acme.ID); err != nil {
+		return nil, err
+	}
 	return last, nil
+}
+
+// demoPolicy carga el flujo de trabajo de ejemplo de Acme: contexto, una regla, estados de hallazgos,
+// programacion y alertas (con destinos ficticios).
+func demoPolicy(ctx context.Context, svc *app.Service, orgID string) error {
+	for _, c := range []domain.AssetContext{
+		{Match: "203.0.113.0/28", Environment: "produccion", Criticality: "alta", Owner: "Operaciones (planta)"},
+		{Match: "vpn." + Acme, Environment: "produccion", Criticality: "alta", Owner: "Redes"},
+		{Match: "legacy." + Acme, Environment: "pruebas", Owner: "Infraestructura", Note: "Servidor viejo, se apaga en marzo"},
+		{Match: "198.51.100.50", Environment: "desarrollo", Owner: "Equipo Web"},
+	} {
+		if _, err := svc.SaveContext(ctx, orgID, c); err != nil {
+			return err
+		}
+	}
+	if _, err := svc.SaveRule(ctx, orgID, domain.SeverityRule{Rule: "HY-01", Severity: domain.SevCritical, Note: "Política interna: ningún panel de administración público"}); err != nil {
+		return err
+	}
+	ov, err := svc.Overview(ctx)
+	if err != nil {
+		return err
+	}
+	var snapID string
+	for _, o := range ov.Orgs {
+		if o.ID == orgID && o.Latest != nil {
+			snapID = o.Latest.ID
+		}
+	}
+	sn, err := svc.Snapshot(ctx, snapID)
+	if err != nil {
+		return err
+	}
+	until := sn.StartedAt.AddDate(0, 2, 0).Format("2006-01-02")
+	for _, f := range sn.Findings {
+		var c *app.StateChange
+		switch {
+		case f.Rule == "PX-FTP":
+			c = &app.StateChange{Status: domain.StatusAccepted, Note: "Se reemplaza por SFTP en el próximo trimestre; acceso limitado por IP", By: "Ulises (ejemplo)", Until: until}
+		case f.CVE == "CVE-2099-0101":
+			c = &app.StateChange{Status: domain.StatusInProgress, Note: "Ticket SEC-142: parche programado para el viernes", By: "Redes"}
+		case f.Rule == "TLS-03":
+			c = &app.StateChange{Status: domain.StatusFalsePositive, Note: "Certificado interno del entorno de pruebas, no lo usan clientes", By: "Infraestructura"}
+		}
+		if c != nil {
+			if _, err := svc.SetState(ctx, orgID, f.ID, *c); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := svc.SetSchedule(ctx, orgID, domain.Schedule{Enabled: true, Hours: 168, Mode: "escanear"}); err != nil {
+		return err
+	}
+	for _, a := range []domain.Alert{
+		{Name: "KEV al canal de seguridad", Channel: "slack", Target: "https://hooks.slack.com/services/EJEMPLO/EJEMPLO/ejemplo0000", Events: []string{domain.EventKEV}, Enabled: true},
+		{Name: "Críticas nuevas a Jira", Channel: "jira", Target: "SEC", Events: []string{domain.EventNewFinding, domain.EventEscalated}, MinSeverity: domain.SevCritical, Enabled: true},
+		{Name: "Resumen semanal por correo", Channel: "email", Target: "seguridad@acme-logistica.example", Events: []string{domain.EventEveryScan}, Enabled: true},
+	} {
+		if _, err := svc.SaveAlert(ctx, orgID, a); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Intel arma una base de inteligencia ficticia (CVE-2099-*) que muestra cada caso del motor: una
+// confirmada en KEV, una probable por rango, una descartada por version, una por confirmar por ser un
+// paquete de Ubuntu, una sin datos de versiones, otra que la fuente no informo y un fin de soporte.
+func Intel() *intel.DB {
+	db := intel.NewDB()
+	names := map[string]string{"fortios": "Fortinet FortiOS", "grafana": "Grafana", "openssh": "OpenSSH", "nginx": "nginx", "vsftpd": "vsftpd"}
+	rec := func(id, summary string, cvss float64, ssvc *domain.SSVC, products []string, q string, ranges ...intel.Range) {
+		db.AddRecord(&intel.Record{CVE: id, Summary: summary, CVSS: cvss, SSVC: ssvc, Published: "2099-01-15", CWE: []string{"CWE-20"},
+			Sources: []string{"cve"}, Affected: []intel.Affected{{Products: products, Name: names[products[0]], Ranges: ranges, Quality: q, Source: "cve"}}})
+	}
+	rec("CVE-2099-0101", "Vulnerabilidad ficticia de ejemplo: ejecución remota sin autenticación en el portal SSL VPN.", 9.8,
+		&domain.SSVC{Exploitation: "active", Automatable: "yes", TechnicalImpact: "total"}, []string{"fortios"}, intel.QualityStructured,
+		intel.Range{Start: "7.0.0", StartInc: true, End: "7.0.12"})
+	rec("CVE-2099-0102", "Vulnerabilidad ficticia de ejemplo: lectura de archivos del servidor.", 7.5,
+		&domain.SSVC{Exploitation: "poc", Automatable: "no", TechnicalImpact: "partial"}, []string{"grafana"}, intel.QualityText,
+		intel.Range{Start: "8.0.0", StartInc: true, End: "9.1.6", EndInc: true})
+	rec("CVE-2099-0104", "Vulnerabilidad ficticia de ejemplo en el servidor SSH.", 8.1,
+		&domain.SSVC{Exploitation: "poc", Automatable: "no", TechnicalImpact: "total"}, []string{"openssh"}, intel.QualityStructured,
+		intel.Range{Start: "8.5p1", StartInc: true, End: "9.8p1"})
+	rec("CVE-2099-0105", "Vulnerabilidad ficticia de ejemplo en el módulo de proxy.", 7.5, nil, []string{"nginx"}, intel.QualityStructured,
+		intel.Range{Start: "1.20.0", StartInc: true, End: "1.22.1"})
+	rec("CVE-2099-0106", "Vulnerabilidad ficticia de ejemplo: lectura de archivos fuera de la carpeta compartida del FTP.", 8.6,
+		&domain.SSVC{Exploitation: "poc", Automatable: "yes", TechnicalImpact: "partial"}, []string{"vsftpd"}, intel.QualityStructured,
+		intel.Range{Start: "3.0.0", StartInc: true, End: "3.0.5"})
+	db.KEV["CVE-2099-0101"] = intel.KEVEntry{Vendor: "Ejemplo", Product: "SSL VPN", Name: "Ejecución remota (ficticia)", Added: "2099-01-20", Due: "2099-02-10"}
+	db.KEV["CVE-2099-0102"] = intel.KEVEntry{Vendor: "Ejemplo", Product: "Grafana", Name: "Lectura de archivos (ficticia)", Added: "2099-02-01", Due: "2099-02-22", Ransomware: true}
+	for id, x := range map[string][2]float64{"CVE-2099-0101": {0.94, 0.999}, "CVE-2099-0102": {0.03, 0.88}, "CVE-2099-0103": {0.002, 0.41},
+		"CVE-2099-0104": {0.04, 0.9}, "CVE-2099-0106": {0.21, 0.96}} {
+		db.EPSS[id] = intel.EPSSEntry{Score: x[0], Percentile: x[1], Date: "2099-01-31"}
+	}
+	db.NVDHits["beasts:vsftpd@3.0.3"] = []string{"CVE-2099-0106"} // la fuente no la informo: la encuentra Baqueano
+	db.EOL["apache-http-server"] = []intel.Release{{Name: "2.2", IsEOL: true}, {Name: "2.4", IsEOL: false}}
+	db.KEVCatalog = "ejemplo"
+	at := time.Date(2026, 11, 23, 9, 0, 0, 0, time.UTC)
+	for _, k := range []string{"kev", "cve", "epss", "eol"} {
+		db.Updated[k] = at
+	}
+	return db
 }

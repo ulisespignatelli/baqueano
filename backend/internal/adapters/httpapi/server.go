@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ulisespignatelli/baqueano/backend/internal/app"
 	"github.com/ulisespignatelli/baqueano/backend/internal/domain"
+	"github.com/ulisespignatelli/baqueano/backend/internal/intel"
 )
 
 // Config del servidor.
@@ -22,6 +24,7 @@ type Config struct {
 	Loopback bool   // valida el encabezado Host (defensa contra DNS rebinding)
 	Version  string
 	Source   string // fuente de exposicion: shodan | internetdb | none
+	Intel    *intel.Engine
 	Logger   *slog.Logger
 }
 
@@ -50,6 +53,19 @@ func New(svc *app.Service, cfg Config) *Server {
 	m.HandleFunc("POST /api/v1/orgs/{id}/attestation", s.mutating(s.attest))
 	m.HandleFunc("POST /api/v1/orgs/{id}/verify", s.mutating(s.verify))
 	m.HandleFunc("POST /api/v1/orgs/{id}/scans", s.mutating(s.startScan))
+	m.HandleFunc("POST /api/v1/orgs/{id}/reassess", s.mutating(s.startReassess))
+	m.HandleFunc("POST /api/v1/orgs/{id}/contexts", s.mutating(s.saveContext))
+	m.HandleFunc("DELETE /api/v1/orgs/{id}/contexts/{cid}", s.mutating(s.deleteContext))
+	m.HandleFunc("POST /api/v1/orgs/{id}/rules", s.mutating(s.saveRule))
+	m.HandleFunc("DELETE /api/v1/orgs/{id}/rules/{rid}", s.mutating(s.deleteRule))
+	m.HandleFunc("POST /api/v1/orgs/{id}/findings/{fid}/state", s.mutating(s.setState))
+	m.HandleFunc("POST /api/v1/orgs/{id}/alerts", s.mutating(s.saveAlert))
+	m.HandleFunc("DELETE /api/v1/orgs/{id}/alerts/{aid}", s.mutating(s.deleteAlert))
+	m.HandleFunc("POST /api/v1/orgs/{id}/alerts/{aid}/test", s.mutating(s.testAlert))
+	m.HandleFunc("POST /api/v1/orgs/{id}/schedule", s.mutating(s.setSchedule))
+	m.HandleFunc("GET /api/v1/intel", s.intelStatus)
+	m.HandleFunc("POST /api/v1/intel/update", s.mutating(s.intelUpdate))
+	m.HandleFunc("GET /api/v1/intel/cves/{id}", s.intelCVE)
 	m.HandleFunc("GET /api/v1/jobs/{id}", s.getJob)
 	m.HandleFunc("GET /api/v1/snapshots/{id}", s.getSnapshot)
 	m.HandleFunc("GET /api/v1/snapshots/{id}/changes", s.changes)
@@ -123,7 +139,7 @@ func (s *Server) mutating(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "ok", "version": s.cfg.Version, "exposure_source": s.cfg.Source,
-		"auth_required": s.cfg.Token != "", "read_only": false})
+		"auth_required": s.cfg.Token != "", "read_only": false, "intel": s.cfg.Intel != nil})
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +177,7 @@ func (s *Server) getOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, os := range o.Orgs {
 		if os.ID == id {
-			snaps, err := s.svc.Repo.ListSnapshots(r.Context(), id)
+			snaps, err := s.svc.SnapshotMetas(r.Context(), id, 0)
 			if s.fail(w, err) {
 				return
 			}
@@ -286,6 +302,147 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, j.View())
 }
 
+func (s *Server) startReassess(w http.ResponseWriter, r *http.Request) {
+	j, err := s.svc.StartReassess(r.PathValue("id"))
+	if errors.Is(err, app.ErrBusy) {
+		writeErr(w, 409, err.Error())
+		return
+	}
+	if err != nil && !errors.Is(err, app.ErrNotFound) {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if s.fail(w, err) {
+		return
+	}
+	writeJSON(w, 202, j.View())
+}
+
+// orgResultBad devuelve 400 para errores de validacion y lo habitual para el resto.
+func (s *Server) orgEdit(w http.ResponseWriter, o domain.Organization, err error) {
+	if err != nil && !errors.Is(err, app.ErrNotFound) {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if s.fail(w, err) {
+		return
+	}
+	writeJSON(w, 200, o)
+}
+
+func (s *Server) saveContext(w http.ResponseWriter, r *http.Request) {
+	var c domain.AssetContext
+	if !decode(w, r, &c) {
+		return
+	}
+	o, err := s.svc.SaveContext(r.Context(), r.PathValue("id"), c)
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) deleteContext(w http.ResponseWriter, r *http.Request) {
+	o, err := s.svc.DeleteContext(r.Context(), r.PathValue("id"), r.PathValue("cid"))
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
+	var x domain.SeverityRule
+	if !decode(w, r, &x) {
+		return
+	}
+	o, err := s.svc.SaveRule(r.Context(), r.PathValue("id"), x)
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
+	o, err := s.svc.DeleteRule(r.Context(), r.PathValue("id"), r.PathValue("rid"))
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) setState(w http.ResponseWriter, r *http.Request) {
+	var c app.StateChange
+	if !decode(w, r, &c) {
+		return
+	}
+	o, err := s.svc.SetState(r.Context(), r.PathValue("id"), r.PathValue("fid"), c)
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) saveAlert(w http.ResponseWriter, r *http.Request) {
+	var a domain.Alert
+	if !decode(w, r, &a) {
+		return
+	}
+	o, err := s.svc.SaveAlert(r.Context(), r.PathValue("id"), a)
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
+	o, err := s.svc.DeleteAlert(r.Context(), r.PathValue("id"), r.PathValue("aid"))
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) testAlert(w http.ResponseWriter, r *http.Request) {
+	err := s.svc.TestAlert(r.Context(), r.PathValue("id"), r.PathValue("aid"))
+	switch {
+	case errors.Is(err, app.ErrNotFound):
+		writeErr(w, 404, "no encontrado")
+	case err != nil:
+		writeErr(w, 502, err.Error())
+	default:
+		writeJSON(w, 200, map[string]string{"status": "enviado"})
+	}
+}
+
+func (s *Server) setSchedule(w http.ResponseWriter, r *http.Request) {
+	var sc domain.Schedule
+	if !decode(w, r, &sc) {
+		return
+	}
+	o, err := s.svc.SetSchedule(r.Context(), r.PathValue("id"), sc)
+	s.orgEdit(w, o, err)
+}
+
+func (s *Server) intelStatus(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Intel == nil {
+		writeJSON(w, 200, intel.Status{Sources: []intel.SourceStatus{}})
+		return
+	}
+	writeJSON(w, 200, s.cfg.Intel.Status())
+}
+
+func (s *Server) intelUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Intel == nil {
+		writeErr(w, 400, "no hay base de inteligencia configurada")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	if err := s.cfg.Intel.Update(ctx, nil); err != nil {
+		writeErr(w, 502, err.Error())
+		return
+	}
+	writeJSON(w, 200, s.cfg.Intel.Status())
+}
+
+func (s *Server) intelCVE(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Intel == nil {
+		writeErr(w, 404, "no hay base de inteligencia configurada")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	info, err := s.cfg.Intel.Lookup(ctx, r.PathValue("id"))
+	switch {
+	case errors.Is(err, intel.ErrNotFound):
+		writeErr(w, 404, "no hay datos de esa CVE")
+		return
+	case err != nil:
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, info)
+}
+
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	j, err := s.svc.GetJob(r.PathValue("id"))
 	if s.fail(w, err) {
@@ -295,7 +452,7 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSnapshot(w http.ResponseWriter, r *http.Request) {
-	sn, err := s.svc.Repo.GetSnapshot(r.Context(), r.PathValue("id"))
+	sn, err := s.svc.Snapshot(r.Context(), r.PathValue("id"))
 	if s.fail(w, err) {
 		return
 	}
@@ -311,7 +468,7 @@ func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) export(w http.ResponseWriter, r *http.Request) {
-	sn, err := s.svc.Repo.GetSnapshot(r.Context(), r.PathValue("id"))
+	sn, err := s.svc.Snapshot(r.Context(), r.PathValue("id"))
 	if s.fail(w, err) {
 		return
 	}
@@ -358,6 +515,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	v = redact(v)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)

@@ -164,6 +164,221 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/reassess:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: startReassess
+      description: >
+        Vuelve a evaluar el último escaneo con la inteligencia de vulnerabilidades actual, sin consultar la
+        fuente de exposición (no gasta créditos). Genera un escaneo nuevo; consultar el avance en /jobs/{id}.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "202":
+          description: Reevaluación iniciada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/contexts:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: saveContext
+      description: Crea o actualiza (por id) el contexto de un grupo de activos.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetContext" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/contexts/{cid}:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: cid, in: path, required: true, schema: { type: string } }
+    delete:
+      operationId: deleteContext
+      description: Borra un contexto.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/rules:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: saveRule
+      description: Crea o actualiza una regla de severidad.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SeverityRule" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/rules/{rid}:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: rid, in: path, required: true, schema: { type: string } }
+    delete:
+      operationId: deleteRule
+      description: Borra una regla.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/findings/{fid}/state:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: fid, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: setFindingState
+      description: Cambia el estado de un hallazgo. Aceptar exige motivo, responsable y vencimiento.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StateChange" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/alerts:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: saveAlert
+      description: Crea o actualiza una alerta. Un destino enmascarado conserva el guardado.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Alert" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/alerts/{aid}:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: aid, in: path, required: true, schema: { type: string } }
+    delete:
+      operationId: deleteAlert
+      description: Borra una alerta.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/schedule:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      operationId: setSchedule
+      description: Programa escaneos o reevaluaciones periódicas.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Schedule" }
+      responses:
+        "200":
+          description: Organización actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/alerts/{aid}/test:
+    parameters:
+      - { $ref: "#/components/parameters/ID" }
+      - { name: aid, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: testAlert
+      description: Envía un aviso de prueba por el canal de la alerta.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Enviado.
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { type: string } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /intel:
+    get:
+      operationId: getIntel
+      description: Estado de la base de inteligencia de vulnerabilidades y de cada fuente.
+      responses:
+        "200":
+          description: Estado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IntelStatus" }
+  /intel/update:
+    post:
+      operationId: updateIntel
+      description: Descarga el catálogo KEV y refresca EPSS de las CVE conocidas.
+      security: [{ csrf: [] }, { csrf: [], bearer: [] }]
+      responses:
+        "200":
+          description: Base actualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IntelStatus" }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /intel/cves/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: "^CVE-\\d{4}-\\d{4,}$" } }
+    get:
+      operationId: getCVE
+      description: Lo que se sabe de una CVE (versiones afectadas por fuente, KEV, EPSS, SSVC). Si falta y hay conexión, se consulta.
+      responses:
+        "200":
+          description: Datos de la CVE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CVEInfo" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /jobs/{id}:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     get:
@@ -241,9 +456,10 @@ components:
       properties:
         status: { type: string }
         version: { type: string }
-        exposure_source: { type: string, enum: [shodan, internetdb, none, demo] }
+        exposure_source: { type: string, description: "shodan, internetdb, censys, none o demo; combinadas con + (shodan+censys)." }
         auth_required: { type: boolean }
         read_only: { type: boolean }
+        intel: { type: boolean, description: Hay base de inteligencia de vulnerabilidades. }
 
     Domain:
       type: object
@@ -280,6 +496,81 @@ components:
         attestation: { $ref: "#/components/schemas/Attestation" }
         audit: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
         created_at: { type: string, format: date-time }
+        contexts: { type: array, items: { $ref: "#/components/schemas/AssetContext" } }
+        rules: { type: array, items: { $ref: "#/components/schemas/SeverityRule" } }
+        states: { type: object, additionalProperties: { $ref: "#/components/schemas/FindingState" }, description: Estado de cada hallazgo por su ID. }
+        schedule: { $ref: "#/components/schemas/Schedule" }
+        alerts: { type: array, items: { $ref: "#/components/schemas/Alert" }, description: "Los destinos de webhook, Slack y Teams se devuelven enmascarados." }
+    AssetContext:
+      type: object
+      required: [match]
+      properties:
+        id: { type: string }
+        match: { type: string, description: "Nombre, *.subdominio, IP o red." }
+        environment: { type: string, enum: [produccion, pruebas, desarrollo, ""] }
+        criticality: { type: string, enum: [alta, normal, baja, ""] }
+        owner: { type: string }
+        note: { type: string }
+    SeverityRule:
+      type: object
+      required: [rule, severity, note]
+      properties:
+        id: { type: string }
+        rule: { type: string, description: "Control (PX-RDP), familia (PX-*) o todos (*)." }
+        match: { type: string }
+        environment: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        note: { type: string }
+    FindingState:
+      type: object
+      required: [status, at]
+      properties:
+        status: { type: string, enum: [abierto, en-curso, aceptado, falso-positivo] }
+        note: { type: string }
+        by: { type: string }
+        at: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+    StateChange:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [abierto, en-curso, aceptado, falso-positivo] }
+        note: { type: string }
+        by: { type: string }
+        until: { type: string, description: "AAAA-MM-DD; obligatorio para aceptar (hasta un año)." }
+    Schedule:
+      type: object
+      required: [enabled, hours, mode]
+      properties:
+        enabled: { type: boolean }
+        hours: { type: integer, minimum: 6, maximum: 720 }
+        mode: { type: string, enum: [escanear, reevaluar] }
+        next_run: { type: string, format: date-time }
+        last_run: { type: string, format: date-time }
+        last_error: { type: string }
+    Alert:
+      type: object
+      required: [name, channel, target, events, enabled]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        channel: { type: string, enum: [webhook, slack, teams, email, jira] }
+        target: { type: string }
+        events: { type: array, items: { type: string, enum: [hallazgo-nuevo, sube-severidad, servicio-nuevo, kev, resumen] } }
+        min_severity: { type: string }
+        rules: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+        last_sent: { type: string, format: date-time }
+        last_error: { type: string }
+        tickets: { type: object, additionalProperties: { type: string } }
+    Consensus:
+      type: object
+      required: [sources, services, all, single]
+      properties:
+        sources: { type: array, items: { type: string } }
+        services: { type: integer }
+        all: { type: integer }
+        single: { type: integer }
     AttestationRequest:
       type: object
       required: [by, accepted]
@@ -354,8 +645,40 @@ components:
         cvss: { type: number }
         epss: { type: number }
         kev: { type: boolean }
-        verified: { type: boolean, description: "false = inferida por la versión, no confirmada." }
+        verified: { type: boolean, description: "La fuente la confirmó con una prueba (no solo por la versión)." }
         summary: { type: string }
+        origin: { type: string, description: "Quién la propuso: shodan | internetdb | baqueano (encontrada por el motor)." }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        reason: { type: string, description: Por qué esa confianza. }
+        fixed_in: { type: string, description: Primera versión corregida en la rama del servicio. }
+        sources: { type: array, items: { type: string } }
+        priority: { type: string, enum: [P1, P2, P3, P4], description: "P1 hoy · P2 esta semana · P3 este mes · P4 planificar." }
+        priority_reason: { type: string }
+        epss_percentile: { type: number }
+        kev_due: { type: string }
+        ransomware: { type: boolean }
+        ssvc: { $ref: "#/components/schemas/SSVC" }
+        cwe: { type: [array, "null"], items: { type: string } }
+        published: { type: string }
+    Confidence:
+      type: string
+      enum: [confirmada, probable, por-confirmar, improbable, descartada]
+    SSVC:
+      type: object
+      required: [exploitation, automatable, technical_impact]
+      properties:
+        exploitation: { type: string }
+        automatable: { type: string }
+        technical_impact: { type: string }
+    EOL:
+      type: object
+      required: [product, cycle, source]
+      properties:
+        product: { type: string }
+        cycle: { type: string }
+        since: { type: string }
+        latest: { type: string }
+        source: { type: string }
     Cert:
       type: object
       required: [not_after]
@@ -380,11 +703,15 @@ components:
         tags: { type: array, items: { type: string } }
         cpes: { type: array, items: { type: string } }
         vulns: { type: array, items: { $ref: "#/components/schemas/Vuln" } }
+        dismissed: { type: array, items: { $ref: "#/components/schemas/Vuln" }, description: CVE propuestas por la fuente que el motor descartó, con el motivo. }
+        eol: { $ref: "#/components/schemas/EOL" }
+        banner: { type: string }
         cert: { $ref: "#/components/schemas/Cert" }
         hostnames: { type: array, items: { type: string } }
         org: { type: string }
         country: { type: string }
         seen_at: { type: string, format: date-time }
+        seen_by: { type: array, items: { type: string } }
         source: { type: string }
     Finding:
       type: object
@@ -400,6 +727,13 @@ components:
         asset: { type: string }
         evidence: { type: array, items: { type: string } }
         cve: { type: string }
+        vuln: { $ref: "#/components/schemas/Vuln" }
+        base_severity: { type: string, description: Severidad antes del contexto y las reglas de la organización. }
+        adjustments: { type: array, items: { type: string } }
+        environment: { type: string }
+        criticality: { type: string }
+        owner: { type: string }
+        state: { $ref: "#/components/schemas/FindingState" }
     Snapshot:
       type: object
       required: [id, org_id, org_name, started_at, finished_at, domains, networks, authorization, assets, services, findings, sources, score]
@@ -417,19 +751,107 @@ components:
         findings: { type: [array, "null"], items: { $ref: "#/components/schemas/Finding" } }
         sources: { type: array, items: { type: string } }
         notes: { type: array, items: { type: string } }
+        consensus: { $ref: "#/components/schemas/Consensus" }
         score: { type: integer }
     Changes:
       type: object
-      required: [new_services, closed_services, new_findings, resolved_findings, new_assets, gone_assets]
+      required: [new_services, closed_services, new_findings, resolved_findings, severity_changes, new_assets, gone_assets]
       properties:
         previous_id: { type: string }
         new_services: { type: array, items: { $ref: "#/components/schemas/Service" } }
         closed_services: { type: array, items: { $ref: "#/components/schemas/Service" } }
         new_findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
         resolved_findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+        severity_changes:
+          type: array
+          items:
+            type: object
+            required: [finding, before, up]
+            properties:
+              finding: { $ref: "#/components/schemas/Finding" }
+              before: { $ref: "#/components/schemas/Severity" }
+              up: { type: boolean }
         new_assets: { type: array, items: { type: string } }
         gone_assets: { type: array, items: { type: string } }
 
+    IntelStatus:
+      type: object
+      required: [online, nvd_key, records, sources]
+      properties:
+        online: { type: boolean }
+        nvd_key: { type: boolean }
+        kev_catalog: { type: string }
+        records: { type: integer }
+        sources:
+          type: array
+          items:
+            type: object
+            required: [id, name, description, items]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+              items: { type: integer }
+              updated: { type: string, format: date-time }
+              error: { type: string }
+    Range:
+      type: object
+      properties:
+        exact: { type: string }
+        start: { type: string }
+        start_inc: { type: boolean }
+        end: { type: string }
+        end_inc: { type: boolean }
+        prefix: { type: string }
+    CVEInfo:
+      type: object
+      properties:
+        record:
+          type: object
+          required: [cve]
+          properties:
+            cve: { type: string }
+            summary: { type: string }
+            published: { type: string }
+            cvss: { type: number }
+            vector: { type: string }
+            cwe: { type: [array, "null"], items: { type: string } }
+            ssvc: { $ref: "#/components/schemas/SSVC" }
+            sources: { type: array, items: { type: string } }
+            rejected: { type: boolean }
+            affected:
+              type: array
+              items:
+                type: object
+                required: [name, quality, source]
+                properties:
+                  products: { type: array, items: { type: string } }
+                  name: { type: string }
+                  ranges: { type: array, items: { $ref: "#/components/schemas/Range" } }
+                  unaffected: { type: array, items: { $ref: "#/components/schemas/Range" } }
+                  all_versions: { type: boolean }
+                  not_affected: { type: boolean }
+                  quality: { type: string, enum: [estructurado, texto, sin-versiones] }
+                  source: { type: string, enum: [nvd, cve, cisa-adp] }
+        kev:
+          type: object
+          required: [added, due]
+          properties:
+            vendor: { type: string }
+            product: { type: string }
+            name: { type: string }
+            added: { type: string }
+            due: { type: string }
+            action: { type: string }
+            ransomware: { type: boolean }
+        epss:
+          type: object
+          required: [score, percentile]
+          properties:
+            score: { type: number }
+            percentile: { type: number }
+            date: { type: string }
+            fetched: { type: string, format: date-time }
     Job:
       type: object
       required: [id, org_id, status, message, started_at]

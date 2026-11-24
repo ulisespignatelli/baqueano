@@ -9,7 +9,19 @@ export const keys = {
   snapshot: (id: string) => ["snapshot", id] as const,
   changes: (id: string) => ["snapshot", id, "changes"] as const,
   job: (id: string) => ["job", id] as const,
+  intel: ["intel"] as const,
+  cve: (id: string) => ["cve", id] as const,
 };
+
+export const useIntel = () => useQuery({ queryKey: keys.intel, queryFn: api.intel });
+export const useCVE = (id: string) => useQuery({ queryKey: keys.cve(id), queryFn: () => api.cve(id), staleTime: 300_000 });
+export function useUpdateIntel() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => api.updateIntel(), onSuccess: (st) => qc.setQueryData(keys.intel, st) });
+}
+export function useStartReassess(id: string) {
+  return useMutation({ mutationFn: () => api.startReassess(id) });
+}
 
 export const useHealth = () => useQuery({ queryKey: keys.health, queryFn: api.health, staleTime: 60_000 });
 export const useOverview = () => useQuery({ queryKey: keys.overview, queryFn: api.overview });

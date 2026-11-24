@@ -41,5 +41,9 @@ export const httpSource: DataSource = {
   deleteOrg: (id) => request(`/orgs/${enc(id)}`, { method: "DELETE" }),
   startScan: (id) => post(`/orgs/${enc(id)}/scans`),
   job: (id) => request(`/jobs/${enc(id)}`),
+  startReassess: (id) => post(`/orgs/${enc(id)}/reassess`),
+  intel: () => request("/intel"),
+  updateIntel: () => post("/intel/update"),
+  cve: (id) => request(`/intel/cves/${enc(id)}`),
   exportUrl: (id, format) => `${BASE}/snapshots/${enc(id)}/export?format=${format}`,
 };

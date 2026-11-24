@@ -12,3 +12,6 @@ export const IconGithub = () => (
 export const IconShield = () => (
   <svg {...base} aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6z" /><path d="M9 12l2 2 4-4" /></svg>
 );
+export const IconBug = () => (
+  <svg {...base} aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0v1H8z" /><rect x="7" y="9" width="10" height="11" rx="5" /><path d="M12 13v7M3 13h4M17 13h4M4 7l3 2M20 7l-3 2M4 19l3-2M20 19l-3-2" /></svg>
+);

@@ -1,4 +1,6 @@
+import { Link } from "react-router-dom";
 import { Card, Empty, Tag } from "@/shared/ui";
+import { confidenceLabel, priorityLabel } from "@/features/intel/labels";
 import { fmtDate } from "@/shared/lib/format";
 import { useOrgContext } from "@/features/orgs/context";
 
@@ -45,6 +47,11 @@ export function ServicesPage() {
                     {(v.tags ?? []).map((t) => (
                       <Tag key={t}>{t}</Tag>
                     ))}
+                    {v.eol && (
+                      <span className="flag flag--kev" title={`Rama ${v.eol.cycle} sin parches de seguridad${v.eol.since ? " desde " + v.eol.since : ""} (${v.eol.source})`}>
+                        sin soporte
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="small">
@@ -62,18 +69,27 @@ export function ServicesPage() {
                   )}
                 </td>
                 <td>
-                  {(v.vulns ?? []).length === 0 ? (
+                  {(v.vulns ?? []).length === 0 && (v.dismissed ?? []).length === 0 ? (
                     "—"
                   ) : (
                     <div className="chips">
                       {(v.vulns ?? []).slice(0, 4).map((x) => (
-                        <span key={x.cve} className="cat mono" style={{ borderColor: x.kev ? "var(--sev-critica)" : undefined, color: x.kev ? "var(--sev-critica)" : undefined }} title={x.summary}>
+                        <Link
+                          key={x.cve}
+                          to={`/intel/cve/${x.cve}`}
+                          className={`vchip vchip--${x.priority ?? (x.kev ? "P1" : "P4")} ${x.confidence === "por-confirmar" || x.confidence === "improbable" ? "vchip--dim" : ""}`}
+                          title={[x.priority && `${x.priority} · ${priorityLabel[x.priority]}`, x.confidence && confidenceLabel[x.confidence], x.reason].filter(Boolean).join(" — ")}
+                        >
                           {x.cve}
                           {x.kev ? " · KEV" : ""}
-                          {!x.verified ? " ?" : ""}
-                        </span>
+                        </Link>
                       ))}
                       {(v.vulns ?? []).length > 4 && <span className="small muted">+{(v.vulns ?? []).length - 4}</span>}
+                      {(v.dismissed ?? []).length > 0 && (
+                        <span className="small muted" title={(v.dismissed ?? []).map((d) => `${d.cve}: ${d.reason}`).join("\n")} style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                          {(v.dismissed ?? []).length} descartada{(v.dismissed ?? []).length === 1 ? "" : "s"} por versión
+                        </span>
+                      )}
                     </div>
                   )}
                 </td>
@@ -87,7 +103,7 @@ export function ServicesPage() {
         </table>
       </div>
       <div className="pager">
-        <span>«?» = vulnerabilidad inferida por la versión, sin confirmar · KEV = explotada activamente según CISA</span>
+        <span>Color = prioridad (rojo: corregir hoy) · borde punteado = por confirmar o improbable · KEV = explotada según CISA · pasá el mouse para ver el motivo</span>
       </div>
     </Card>
   );

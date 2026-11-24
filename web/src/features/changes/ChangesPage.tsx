@@ -16,10 +16,29 @@ export function ChangesPage() {
         </Empty>
       </Card>
     );
-  const none = data.new_services.length + data.closed_services.length + data.new_findings.length + data.resolved_findings.length + data.new_assets.length + data.gone_assets.length === 0;
+  const sc = data.severity_changes ?? [];
+  const none = data.new_services.length + data.closed_services.length + data.new_findings.length + data.resolved_findings.length + data.new_assets.length + data.gone_assets.length + sc.length === 0;
   if (none) return <Card><Empty title="Sin cambios desde el escaneo anterior" /></Card>;
   return (
     <div className="grid grid--2">
+      {sc.length > 0 && (
+        <Card title={`Cambió la severidad · ${sc.length}`} className="span-all">
+          <ul className="change-list">
+            {sc.map((c) => (
+              <li key={c.finding.id}>
+                <span className={`sign ${c.up ? "plus" : "minus"}`}>{c.up ? "↑" : "↓"}</span>
+                <SeverityBadge severity={c.before} />
+                <span className="muted">→</span>
+                <SeverityBadge severity={c.finding.severity} />
+                <span>
+                  {c.finding.title} <span className="path">{c.finding.asset}</span>
+                  {c.finding.vuln?.priority_reason && <div className="cell-sub">{c.finding.vuln.priority_reason}</div>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card title={`Hallazgos nuevos · ${data.new_findings.length}`}>
         <ul className="change-list">
           {data.new_findings.map((f) => (

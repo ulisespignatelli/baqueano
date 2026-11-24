@@ -164,6 +164,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orgs/{id}/reassess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Vuelve a evaluar el último escaneo con la inteligencia de vulnerabilidades actual, sin consultar la fuente de exposición (no gasta créditos). Genera un escaneo nuevo; consultar el avance en /jobs/{id}. */
+        post: operations["startReassess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Estado de la base de inteligencia de vulnerabilidades y de cada fuente. */
+        get: operations["getIntel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intel/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Descarga el catálogo KEV y refresca EPSS de las CVE conocidas. */
+        post: operations["updateIntel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intel/cves/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Lo que se sabe de una CVE (versiones afectadas por fuente, KEV, EPSS, SSVC). Si falta y hay conexión, se consulta. */
+        get: operations["getCVE"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{id}": {
         parameters: {
             query?: never;
@@ -256,6 +328,8 @@ export interface components {
             exposure_source: "shodan" | "internetdb" | "none" | "demo";
             auth_required: boolean;
             read_only: boolean;
+            /** @description Hay base de inteligencia de vulnerabilidades. */
+            intel?: boolean;
         };
         Domain: {
             name: string;
@@ -346,9 +420,43 @@ export interface components {
             cvss?: number;
             epss?: number;
             kev?: boolean;
-            /** @description false = inferida por la versión, no confirmada. */
+            /** @description La fuente la confirmó con una prueba (no solo por la versión). */
             verified: boolean;
             summary?: string;
+            /** @description Quién la propuso: shodan | internetdb | baqueano (encontrada por el motor). */
+            origin?: string;
+            confidence?: components["schemas"]["Confidence"];
+            /** @description Por qué esa confianza. */
+            reason?: string;
+            /** @description Primera versión corregida en la rama del servicio. */
+            fixed_in?: string;
+            sources?: string[];
+            /**
+             * @description P1 hoy · P2 esta semana · P3 este mes · P4 planificar.
+             * @enum {string}
+             */
+            priority?: "P1" | "P2" | "P3" | "P4";
+            priority_reason?: string;
+            epss_percentile?: number;
+            kev_due?: string;
+            ransomware?: boolean;
+            ssvc?: components["schemas"]["SSVC"];
+            cwe?: string[] | null;
+            published?: string;
+        };
+        /** @enum {string} */
+        Confidence: "confirmada" | "probable" | "por-confirmar" | "improbable" | "descartada";
+        SSVC: {
+            exploitation: string;
+            automatable: string;
+            technical_impact: string;
+        };
+        EOL: {
+            product: string;
+            cycle: string;
+            since?: string;
+            latest?: string;
+            source: string;
         };
         Cert: {
             subject?: string;
@@ -370,6 +478,10 @@ export interface components {
             tags?: string[];
             cpes?: string[];
             vulns?: components["schemas"]["Vuln"][];
+            /** @description CVE propuestas por la fuente que el motor descartó */
+            dismissed?: components["schemas"]["Vuln"][];
+            eol?: components["schemas"]["EOL"];
+            banner?: string;
             cert?: components["schemas"]["Cert"];
             hostnames?: string[];
             org?: string;
@@ -389,6 +501,7 @@ export interface components {
             asset: string;
             evidence?: string[];
             cve?: string;
+            vuln?: components["schemas"]["Vuln"];
         };
         Snapshot: {
             id: string;
@@ -415,8 +528,77 @@ export interface components {
             closed_services: components["schemas"]["Service"][];
             new_findings: components["schemas"]["Finding"][];
             resolved_findings: components["schemas"]["Finding"][];
+            severity_changes: {
+                finding: components["schemas"]["Finding"];
+                before: components["schemas"]["Severity"];
+                up: boolean;
+            }[];
             new_assets: string[];
             gone_assets: string[];
+        };
+        IntelStatus: {
+            online: boolean;
+            nvd_key: boolean;
+            kev_catalog?: string;
+            records: number;
+            sources: {
+                id: string;
+                name: string;
+                description: string;
+                items: number;
+                /** Format: date-time */
+                updated?: string;
+                error?: string;
+            }[];
+        };
+        Range: {
+            exact?: string;
+            start?: string;
+            start_inc?: boolean;
+            end?: string;
+            end_inc?: boolean;
+            prefix?: string;
+        };
+        CVEInfo: {
+            record?: {
+                cve: string;
+                summary?: string;
+                published?: string;
+                cvss?: number;
+                vector?: string;
+                cwe?: string[] | null;
+                ssvc?: components["schemas"]["SSVC"];
+                sources?: string[];
+                rejected?: boolean;
+                affected?: {
+                    products?: string[];
+                    name: string;
+                    ranges?: components["schemas"]["Range"][];
+                    unaffected?: components["schemas"]["Range"][];
+                    all_versions?: boolean;
+                    not_affected?: boolean;
+                    /** @enum {string} */
+                    quality: "estructurado" | "texto" | "sin-versiones";
+                    /** @enum {string} */
+                    source: "nvd" | "cve" | "cisa-adp";
+                }[];
+            };
+            kev?: {
+                vendor?: string;
+                product?: string;
+                name?: string;
+                added: string;
+                due: string;
+                action?: string;
+                ransomware?: boolean;
+            };
+            epss?: {
+                score: number;
+                percentile: number;
+                date?: string;
+                /** Format: date-time */
+                fetched?: string;
+            };
         };
         Job: {
             id: string;
@@ -714,6 +896,97 @@ export interface operations {
             };
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    startReassess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reevaluación iniciada. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getIntel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Estado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntelStatus"];
+                };
+            };
+        };
+    };
+    updateIntel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Base actualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntelStatus"];
+                };
+            };
+            400: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
+    getCVE: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Datos de la CVE. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CVEInfo"];
+                };
+            };
+            400: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     getJob: {

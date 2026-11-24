@@ -2,7 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { api } from "@/shared/api";
 import { useHealth } from "@/shared/api/queries";
 import { sourceLabel } from "@/shared/lib/labels";
-import { IconEye, IconGithub, IconPlus, IconShield } from "./icons";
+import { IconBug, IconEye, IconGithub, IconPlus, IconShield } from "./icons";
 
 const REPO = "https://github.com/ulisespignatelli/baqueano";
 
@@ -27,6 +27,9 @@ export function Layout() {
               <IconPlus /> Nueva organización
             </NavLink>
           )}
+          <NavLink to="/intel">
+            <IconBug /> Inteligencia
+          </NavLink>
           <NavLink to="/about">
             <IconShield /> Cómo funciona
           </NavLink>
@@ -52,8 +55,7 @@ export function Layout() {
         {api.mode === "demo" && (
           <div className="demo-banner">
             <span>
-              Demo con <b>organizaciones ficticias</b> (dominios .example, IP de documentación, CVE inventadas). Baqueano solo analiza dominios
-              cuyo dueño lo autorizó en DNS.
+              Demo con <b>organizaciones ficticias</b> (dominios .example, IP de documentación, CVE inventadas).
             </span>
             <a href={REPO}>Ver en GitHub →</a>
           </div>

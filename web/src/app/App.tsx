@@ -10,6 +10,8 @@ import { ServicesPage } from "@/features/services/ServicesPage";
 import { ChangesPage } from "@/features/changes/ChangesPage";
 import { SettingsPage } from "@/features/setup/SettingsPage";
 import { AboutPage } from "@/features/overview/AboutPage";
+import { IntelPage } from "@/features/intel/IntelPage";
+import { CVEPage } from "@/features/intel/CVEPage";
 import { Empty } from "@/shared/ui";
 import { ApiError } from "@/shared/api/types";
 
@@ -35,6 +37,8 @@ export function App() {
               <Route path="changes" element={<ChangesPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
+            <Route path="intel" element={<IntelPage />} />
+            <Route path="intel/cve/:id" element={<CVEPage />} />
             <Route path="about" element={<AboutPage />} />
             <Route path="*" element={<Empty title="Página inexistente" />} />
           </Route>

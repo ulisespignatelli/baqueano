@@ -35,5 +35,12 @@ export const demoSource: DataSource = {
   deleteOrg: readOnly,
   startScan: readOnly,
   job: readOnly,
+  startReassess: readOnly,
+  intel: () => get("intel.json"),
+  updateIntel: readOnly,
+  cve: (id) => {
+    if (!/^CVE-\d{4}-\d{4,}$/.test(id)) return Promise.reject(new ApiError(404, "no encontrado"));
+    return get(`intel/cves/${id}.json`);
+  },
   exportUrl: () => null,
 };

@@ -6,6 +6,7 @@ import { CATEGORIES, SEVERITIES, categoryLabel, severityLabel } from "@/shared/l
 import { fmtNum } from "@/shared/lib/format";
 import { useOrgContext } from "@/features/orgs/context";
 import { filterFindings } from "./filter";
+import { ConfidenceBadge, PriorityBadge, VulnPanel } from "@/features/intel/VulnIntel";
 
 export function FindingsPage() {
   const { snapshot } = useOrgContext();
@@ -92,7 +93,16 @@ export function FindingsPage() {
                     </td>
                     <td>
                       <div className="cell-main">{f.title}</div>
-                      <div className="cell-sub" style={{ maxWidth: 620 }}>{f.detail}</div>
+                      {f.vuln ? (
+                        <div className="row" style={{ gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                          <PriorityBadge p={f.vuln.priority} />
+                          <ConfidenceBadge c={f.vuln.confidence} />
+                          {f.vuln.kev && <span className="flag flag--kev">KEV</span>}
+                          {f.vuln.origin === "baqueano" && <span className="flag">encontrada por Baqueano</span>}
+                        </div>
+                      ) : (
+                        <div className="cell-sub" style={{ maxWidth: 620 }}>{f.detail}</div>
+                      )}
                     </td>
                     <td className="path">{f.asset}</td>
                     <td>
@@ -141,7 +151,7 @@ function FindingDrawer({ f, onClose }: { f: Finding; onClose: () => void }) {
         <p className="path">{f.asset}</p>
         <section>
           <h3>Qué pasa</h3>
-          <p style={{ margin: 0, color: "var(--text-2)" }}>{f.detail}</p>
+          {f.vuln ? <VulnPanel v={f.vuln} /> : <p style={{ margin: 0, color: "var(--text-2)" }}>{f.detail}</p>}
         </section>
         <section>
           <h3>Qué hacer</h3>

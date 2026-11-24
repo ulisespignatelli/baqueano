@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useInvalidateOrg, useJob, useStartScan } from "@/shared/api/queries";
+import { useHealth, useInvalidateOrg, useJob, useStartReassess, useStartScan } from "@/shared/api/queries";
 import type { OrgDetail } from "@/shared/api/types";
 
 /** Lanza un escaneo y muestra el avance hasta que termina. */
 export function ScanButton({ org }: { org: OrgDetail }) {
   const start = useStartScan(org.id);
+  const reassess = useStartReassess(org.id);
+  const health = useHealth();
+  const canReassess = !!health.data?.intel && org.snapshots.length > 0;
   const [jobId, setJobId] = useState<string>();
   const job = useJob(jobId);
   const invalidate = useInvalidateOrg();
@@ -23,7 +26,7 @@ export function ScanButton({ org }: { org: OrgDetail }) {
     }
   }, [job.data?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const running = job.data?.status === "running" || start.isPending;
+  const running = job.data?.status === "running" || start.isPending || reassess.isPending;
   return (
     <div className="stack" style={{ gap: 8, minWidth: 280 }}>
       <button
@@ -33,8 +36,18 @@ export function ScanButton({ org }: { org: OrgDetail }) {
         title={authorized ? undefined : "Primero aceptá la declaración de responsabilidad en la pestaña Alcance"}
         onClick={() => start.mutate(undefined, { onSuccess: (j) => setJobId(j.id) })}
       >
-        {running ? "Escaneando…" : "Escanear ahora"}
+        {running ? "Trabajando…" : "Escanear ahora"}
       </button>
+      {canReassess && !running && (
+        <button
+          type="button"
+          className="btn btn--sm btn--ghost"
+          title="Vuelve a evaluar el último escaneo con la inteligencia actual (KEV, EPSS, CVE nuevas) sin consultar Shodan"
+          onClick={() => reassess.mutate(undefined, { onSuccess: (j) => setJobId(j.id) })}
+        >
+          Reevaluar sin escanear
+        </button>
+      )}
       {running && (
         <>
           <div className="progress">
@@ -45,6 +58,7 @@ export function ScanButton({ org }: { org: OrgDetail }) {
       )}
       {job.data?.status === "error" && <span className="small" style={{ color: "var(--sev-critica)" }}>{job.data.error}</span>}
       {start.isError && <span className="small" style={{ color: "var(--sev-critica)" }}>{(start.error as Error).message}</span>}
+      {reassess.isError && <span className="small" style={{ color: "var(--sev-critica)" }}>{(reassess.error as Error).message}</span>}
     </div>
   );
 }

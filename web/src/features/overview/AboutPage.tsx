@@ -30,11 +30,31 @@ export function AboutPage() {
             Con una cuenta de Shodan, la consulta por IP no consume créditos; sin cuenta se usa InternetDB, la API gratuita.
           </p>
         </Card>
-        <Card title="4 · Hallazgos explicados">
+        <Card title="4 · Vulnerabilidades verificadas, no copiadas">
           <p>
-            Servicios que no deberían estar en internet (RDP, bases de datos, protocolos industriales…), vulnerabilidades priorizadas por KEV y
-            EPSS (las inferidas por versión se marcan «por confirmar»), certificados vencidos, subdominios tomables y paneles de administración
-            públicos. Cada hallazgo dice qué es, por qué importa y cómo se corrige.
+            Cada CVE se contrasta con los rangos de versiones del <b>registro CVE oficial</b>, <b>CISA Vulnrichment</b> y la <b>NVD</b>. Si la versión
+            no está afectada se descarta (con el motivo a la vista); si el banner muestra un paquete de Ubuntu, Debian o RHEL queda «por confirmar»,
+            porque las distros corrigen sin cambiar la versión. Además, la NVD encuentra CVE que la fuente no informó.
+          </p>
+        </Card>
+        <Card title="5 · Prioridad por riesgo real">
+          <p>
+            Primero lo que se está explotando (<b>KEV</b> de CISA, uso en ransomware, <b>SSVC</b>), después la probabilidad de explotación
+            (<b>EPSS</b>) y la severidad técnica (CVSS) al final. Cada CVE queda en P1 (hoy), P2 (esta semana), P3 (este mes) o P4 (planificar),
+            con la explicación. «Reevaluar» vuelve a juzgar el último escaneo con la inteligencia nueva sin gastar créditos.
+          </p>
+        </Card>
+        <Card title="6 · Precisión medida">
+          <p>
+            El motor se prueba en cada build contra casos reales con la respuesta del fabricante: precisión, falsos positivos y, sobre todo,
+            <b> cero descartes peligrosos</b> (una CVE que afecta y se descarta). El informe está en <code>docs/benchmark.md</code>.
+          </p>
+        </Card>
+        <Card title="7 · Hallazgos explicados">
+          <p>
+            Además de las CVE: servicios que no deberían estar en internet (RDP, bases de datos, protocolos industriales…), software sin soporte,
+            certificados vencidos, subdominios tomables y paneles de administración públicos. Cada hallazgo dice qué es, por qué importa y cómo se
+            corrige.
           </p>
         </Card>
       </div>

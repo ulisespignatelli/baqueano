@@ -19,6 +19,11 @@ export type Job = S["Job"];
 export type Severity = S["Severity"];
 export type CreateOrgRequest = S["CreateOrgRequest"];
 export type AuditEvent = S["AuditEvent"];
+export type IntelStatus = S["IntelStatus"];
+export type CVEInfo = S["CVEInfo"];
+export type Confidence = S["Confidence"];
+export type SSVC = S["SSVC"];
+export type Range = S["Range"];
 
 export interface DataSource {
   readonly mode: "api" | "demo";
@@ -35,6 +40,10 @@ export interface DataSource {
   deleteOrg(id: string): Promise<void>;
   startScan(id: string): Promise<Job>;
   job(id: string): Promise<Job>;
+  startReassess(id: string): Promise<Job>;
+  intel(): Promise<IntelStatus>;
+  updateIntel(): Promise<IntelStatus>;
+  cve(id: string): Promise<CVEInfo>;
   exportUrl(id: string, format: "json" | "csv"): string | null;
 }
 
